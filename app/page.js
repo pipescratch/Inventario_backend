@@ -41,7 +41,7 @@ export default function Home() {
   return (
     <main
       style={{
-        background: "#F7F5F1",
+        background: "linear-gradient(180deg, #0B1420 0%, #10202B 100%)",
         fontFamily: body.style.fontFamily,
         minHeight: "100vh",
       }}
@@ -57,10 +57,10 @@ export default function Home() {
         <header style={{ marginBottom: "40px" }}>
           <p
             style={{
-              color: "#0E7C86",
+              color: "#2DD4BF",
               fontWeight: 600,
               fontSize: "14px",
-              letterSpacing: "0.06em",
+              letterSpacing: "0.08em",
               textTransform: "uppercase",
               marginBottom: "8px",
             }}
@@ -70,7 +70,7 @@ export default function Home() {
           <h1
             style={{
               fontFamily: display.style.fontFamily,
-              color: "#1B2A32",
+              color: "#F2EFE9",
               fontWeight: 700,
               fontSize: "34px",
               margin: 0,
@@ -79,7 +79,7 @@ export default function Home() {
             Inventario
           </h1>
 
-          {/* Divisor de firma: línea ondulada */}
+          {/* Divisor de firma: línea ondulada dorada */}
           <svg
             width="120"
             height="10"
@@ -90,7 +90,7 @@ export default function Home() {
             <path
               d="M0 5 Q 10 0, 20 5 T 40 5 T 60 5 T 80 5 T 100 5 T 120 5"
               fill="none"
-              stroke="#C9A227"
+              stroke="#E3B04B"
               strokeWidth="2"
             />
           </svg>
@@ -111,8 +111,8 @@ export default function Home() {
               href={a.href}
               style={{
                 display: "block",
-                background: "#FFFFFF",
-                border: "1px solid #E5E1D8",
+                background: "#16232E",
+                border: "1px solid #24333F",
                 borderRadius: "16px",
                 padding: "24px",
                 textDecoration: "none",
@@ -125,7 +125,7 @@ export default function Home() {
               <h2
                 style={{
                   fontFamily: display.style.fontFamily,
-                  color: "#1B2A32",
+                  color: "#F2EFE9",
                   fontWeight: 700,
                   fontSize: "18px",
                   margin: "0 0 4px 0",
@@ -133,7 +133,7 @@ export default function Home() {
               >
                 {a.titulo}
               </h2>
-              <p style={{ color: "#5B6B72", fontSize: "14px", margin: 0 }}>
+              <p style={{ color: "#9FB0BA", fontSize: "14px", margin: 0 }}>
                 {a.detalle}
               </p>
             </Link>
@@ -150,9 +150,9 @@ export default function Home() {
                 fontSize: "14px",
                 padding: "8px 16px",
                 borderRadius: "999px",
-                color: "#1B2A32",
-                border: "1px solid #E5E1D8",
-                background: "#FFFFFF",
+                color: "#F2EFE9",
+                border: "1px solid #24333F",
+                background: "#16232E",
                 textDecoration: "none",
               }}
             >
