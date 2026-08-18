@@ -11,7 +11,16 @@ export async function POST(request) {
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      return json({ status: "server_error", message: "El servidor no tiene configurada ANTHROPIC_API_KEY." }, 500);
+      const envKeys = Object.keys(process.env).filter((k) => k.toUpperCase().includes("ANTHROP"));
+      return json({
+        status: "server_error",
+        message: "El servidor no tiene configurada ANTHROPIC_API_KEY.",
+        debug: {
+          totalVariablesDeEntorno: Object.keys(process.env).length,
+          variablesConAnthropicEnElNombre: envKeys,
+          entornoVercel: process.env.VERCEL_ENV || "desconocido",
+        },
+      }, 500);
     }
 
     const formData = await request.formData();
