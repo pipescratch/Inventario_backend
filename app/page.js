@@ -4,12 +4,10 @@ import { Space_Grotesk, Inter } from "next/font/google";
 const display = Space_Grotesk({
   subsets: ["latin"],
   weight: ["500", "700"],
-  variable: "--font-display",
 });
 const body = Inter({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
-  variable: "--font-body",
 });
 
 const acciones = [
@@ -42,25 +40,41 @@ const accesosSecundarios = [
 export default function Home() {
   return (
     <main
-      className={`${display.variable} ${body.variable} min-h-screen`}
-      style={{ background: "#F7F5F1", fontFamily: "var(--font-body)" }}
+      style={{
+        background: "#F7F5F1",
+        fontFamily: body.style.fontFamily,
+        minHeight: "100vh",
+      }}
     >
-      <div className="max-w-5xl mx-auto px-6 py-10 md:py-16">
+      <div
+        style={{
+          maxWidth: "960px",
+          margin: "0 auto",
+          padding: "48px 24px",
+        }}
+      >
         {/* Encabezado */}
-        <header className="mb-10">
+        <header style={{ marginBottom: "40px" }}>
           <p
-            className="text-sm tracking-wide uppercase mb-2"
-            style={{ color: "#0E7C86", fontWeight: 600 }}
+            style={{
+              color: "#0E7C86",
+              fontWeight: 600,
+              fontSize: "14px",
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              marginBottom: "8px",
+            }}
           >
             La Azotea Ocean Bar
           </p>
           <h1
             style={{
-              fontFamily: "var(--font-display)",
+              fontFamily: display.style.fontFamily,
               color: "#1B2A32",
               fontWeight: 700,
+              fontSize: "34px",
+              margin: 0,
             }}
-            className="text-3xl md:text-4xl"
           >
             Inventario
           </h1>
@@ -70,7 +84,7 @@ export default function Home() {
             width="120"
             height="10"
             viewBox="0 0 120 10"
-            className="mt-4"
+            style={{ marginTop: "16px" }}
             aria-hidden="true"
           >
             <path
@@ -83,29 +97,43 @@ export default function Home() {
         </header>
 
         {/* Acciones principales */}
-        <section className="grid gap-4 md:grid-cols-3 mb-10">
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: "16px",
+            marginBottom: "40px",
+          }}
+        >
           {acciones.map((a) => (
             <Link
               key={a.href}
               href={a.href}
-              className="group block rounded-2xl p-6 transition-colors"
               style={{
+                display: "block",
                 background: "#FFFFFF",
                 border: "1px solid #E5E1D8",
+                borderRadius: "16px",
+                padding: "24px",
+                textDecoration: "none",
+                color: "inherit",
               }}
             >
-              <div className="text-3xl mb-4">{a.icono}</div>
+              <div style={{ fontSize: "30px", marginBottom: "16px" }}>
+                {a.icono}
+              </div>
               <h2
                 style={{
-                  fontFamily: "var(--font-display)",
+                  fontFamily: display.style.fontFamily,
                   color: "#1B2A32",
                   fontWeight: 700,
+                  fontSize: "18px",
+                  margin: "0 0 4px 0",
                 }}
-                className="text-lg mb-1 group-hover:opacity-80"
               >
                 {a.titulo}
               </h2>
-              <p style={{ color: "#5B6B72" }} className="text-sm">
+              <p style={{ color: "#5B6B72", fontSize: "14px", margin: 0 }}>
                 {a.detalle}
               </p>
             </Link>
@@ -113,16 +141,19 @@ export default function Home() {
         </section>
 
         {/* Accesos secundarios */}
-        <nav className="flex flex-wrap gap-3">
+        <nav style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
           {accesosSecundarios.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="text-sm px-4 py-2 rounded-full transition-colors"
               style={{
+                fontSize: "14px",
+                padding: "8px 16px",
+                borderRadius: "999px",
                 color: "#1B2A32",
                 border: "1px solid #E5E1D8",
                 background: "#FFFFFF",
+                textDecoration: "none",
               }}
             >
               {item.label}
