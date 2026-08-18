@@ -9,10 +9,20 @@ function idLocal() {
   return `local-${contadorLocal}`;
 }
 
+// Genera un UUID sin depender de crypto.randomUUID() (que requiere
+// navegadores/iOS recientes). Funciona en cualquier Safari.
+function generarUUID() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 function filaVacia() {
   return {
     idLocal: idLocal(),
-    id: undefined,
+    id: generarUUID(),
     nombre: "",
     categoria: "",
     unidad: "unidad",
@@ -40,7 +50,7 @@ function parsearListaPegada(texto) {
       const normal = Number(partes[2]) || 0;
       return {
         idLocal: idLocal(),
-        id: undefined,
+        id: generarUUID(),
         nombre,
         categoria,
         unidad: "unidad",
@@ -141,7 +151,7 @@ export default function Configuracion() {
       const productos = filas
         .filter((f) => f.nombre.trim().length > 0)
         .map((f) => ({
-          id: f.id,
+          id: f.id && f.id.length > 0 ? f.id : generarUUID(),
           nombre: f.nombre.trim(),
           categoria: f.categoria,
           unidad: f.unidad,
