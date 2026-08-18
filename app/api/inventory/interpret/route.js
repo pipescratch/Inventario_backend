@@ -2,10 +2,16 @@
 // Recibe: multipart/form-data con:
 //   - files: uno o varios archivos (imágenes o PDF)
 //   - tipoCarga: "actual" | "base"
+//   - ubicacion: "bar" | "bodega" (opcional, informativo)
+// Devuelve: { status: "ok"|"rate_limited"|"auth_error"|"server_error"|"parse_error"|"empty",
+//             items?: [{ rawName, closedUnits, openFraction, confidence, needsReview }],
+//             message? }
+//
 // La API key SOLO vive aquí (variable de entorno del servidor). Nunca llega al navegador.
 
+const TRAGOS_POR_BOTELLA = 12;
 const MAX_ARCHIVOS = 12;
-const MAX_BYTES_POR_ARCHIVO = 8 * 1024 * 1024;
+const MAX_BYTES_POR_ARCHIVO = 8 * 1024 * 1024; // 8MB por archivo, margen amplio
 
 export async function POST(request) {
   try {
@@ -36,7 +42,7 @@ export async function POST(request) {
 
     const content = [];
     for (const file of files) {
-      if (typeof file === "string") continue;
+      if (typeof file === "string") continue; // campo mal formado, se ignora
       if (file.size > MAX_BYTES_POR_ARCHIVO) {
         return json({ status: "server_error", message: `El archivo "${file.name}" pesa demasiado (máx. 8MB).` }, 400);
       }
@@ -83,11 +89,12 @@ No inventes productos que no estén escritos.`;
         body: JSON.stringify({
           model: "claude-sonnet-5",
           max_tokens: 12000,
+          thinking: { type: "disabled" },
           messages: [{ role: "user", content }],
         }),
       });
     } catch (e) {
-     return json({ status: "network_error", message: "No se pudo contactar a Anthropic desde el servidor." }, 502);
+      return json({ status: "network_error", message: "No se pudo contactar a Anthropic desde el servidor." }, 502);
     }
 
     if (response.status === 429) {
@@ -106,7 +113,7 @@ No inventes productos que no estén escritos.`;
     }
     if (!response.ok) {
       let detail = "";
-      try { const j = await response.json(); detail = j?.error?.message || ""; } catch {}
+      try { const j = await response.json(); detail = j?.error?.message || ""; } catch { /* sin detalle */ }
       return json({ status: "server_error", message: detail || `Error HTTP ${response.status}` }, 200);
     }
 
@@ -122,7 +129,15 @@ No inventes productos que no estén escritos.`;
 
     let parsed;
     try { parsed = JSON.parse(clean); }
-    catch { return json({ status: "parse_error", message: "No se pudo leer el resultado de la IA como JSON.", stopReason: data.stop_reason, finalCharacters: textBlock.slice(-400), totalLength: textBlock.length }, 200); }
+    catch {
+      return json({
+        status: "parse_error",
+        message: "No se pudo leer el resultado de la IA como JSON.",
+        stopReason: data.stop_reason,
+        finalCharacters: textBlock.slice(-400),
+        totalLength: textBlock.length,
+      }, 200);
+    }
 
     const itemsRaw = Array.isArray(parsed.items) ? parsed.items : null;
     if (!itemsRaw) return json({ status: "parse_error", message: "El resultado no tiene el formato esperado (falta 'items')." }, 200);
@@ -148,3 +163,6 @@ No inventes productos que no estén escritos.`;
 function json(body, status) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
+
+// Referencia, no usado directamente aquí (queda documentado para el frontend):
+// TRAGOS_POR_BOTELLA = 12
