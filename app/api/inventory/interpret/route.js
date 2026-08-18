@@ -122,7 +122,7 @@ No inventes productos que no estén escritos.`;
 
     let parsed;
     try { parsed = JSON.parse(clean); }
-    catch { return json({ status: "parse_error", message: "No se pudo leer el resultado de la IA como JSON.", raw: textBlock.slice(0, 300) }, 200); }
+    catch { return json({ status: "parse_error", message: "No se pudo leer el resultado de la IA como JSON.", stopReason: data.stop_reason, finalCharacters: textBlock.slice(-400), totalLength: textBlock.length }, 200); }
 
     const itemsRaw = Array.isArray(parsed.items) ? parsed.items : null;
     if (!itemsRaw) return json({ status: "parse_error", message: "El resultado no tiene el formato esperado (falta 'items')." }, 200);
