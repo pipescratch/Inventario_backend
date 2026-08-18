@@ -274,7 +274,6 @@ export default function Pedido() {
                 type="file"
                 accept="image/*"
                 multiple
-                capture="environment"
                 onChange={manejarSeleccionFotos}
                 style={{ display: "none" }}
               />
