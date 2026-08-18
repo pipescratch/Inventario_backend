@@ -87,7 +87,7 @@ No inventes productos que no estén escritos.`;
         }),
       });
     } catch (e) {
-      return json({ status: "network_error", message: "No se pudo contactar a Anthropic desde el servidor." }, 502);
+     return json({ status: "network_error", message: "No se pudo contactar a Anthropic desde el servidor." }, 502);
     }
 
     if (response.status === 429) {
