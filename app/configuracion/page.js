@@ -25,12 +25,44 @@ function filaVacia() {
   };
 }
 
+// Convierte texto pegado (una línea por producto: nombre,categoria,normal)
+// en filas de la tabla. medio y alto se copian del valor normal por defecto,
+// se pueden ajustar luego a mano.
+function parsearListaPegada(texto) {
+  return texto
+    .split("\n")
+    .map((linea) => linea.trim())
+    .filter((linea) => linea.length > 0)
+    .map((linea) => {
+      const partes = linea.split(",").map((p) => p.trim());
+      const nombre = partes[0] || "";
+      const categoria = partes[1] || "";
+      const normal = Number(partes[2]) || 0;
+      return {
+        idLocal: idLocal(),
+        id: undefined,
+        nombre,
+        categoria,
+        unidad: "unidad",
+        stockNormal: normal,
+        stockMedio: normal,
+        stockAlto: normal,
+        stockBar: 0,
+        stockBodega: 0,
+        estado: "Activo",
+      };
+    })
+    .filter((f) => f.nombre.length > 0);
+}
+
 export default function Configuracion() {
   const [filas, setFilas] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState(null);
   const [guardado, setGuardado] = useState(false);
+  const [textoPegado, setTextoPegado] = useState("");
+  const [mostrarPegar, setMostrarPegar] = useState(false);
 
   useEffect(() => {
     async function cargar() {
@@ -79,6 +111,22 @@ export default function Configuracion() {
 
   function agregarFila() {
     setFilas((prev) => [...prev, filaVacia()]);
+  }
+
+  function cargarListaPegada() {
+    const nuevas = parsearListaPegada(textoPegado);
+    if (nuevas.length === 0) {
+      setError("No se detectó ningún producto en el texto pegado.");
+      return;
+    }
+    setError(null);
+    setFilas((prev) => {
+      // Si la tabla solo tenía la fila vacía inicial, la reemplaza.
+      const soloVacia = prev.length === 1 && prev[0].nombre.trim() === "";
+      return soloVacia ? nuevas : [...prev, ...nuevas];
+    });
+    setTextoPegado("");
+    setMostrarPegar(false);
   }
 
   function quitarFila(idLocalFila) {
@@ -195,6 +243,68 @@ export default function Configuracion() {
           <p style={{ color: colores.textoSecundario }}>Cargando catálogo...</p>
         ) : (
           <>
+            <button
+              onClick={() => setMostrarPegar((v) => !v)}
+              style={{
+                background: "none",
+                border: `1px solid ${colores.acento}`,
+                borderRadius: "10px",
+                padding: "10px 16px",
+                color: colores.acento,
+                cursor: "pointer",
+                marginBottom: "16px",
+              }}
+            >
+              {mostrarPegar ? "Cerrar" : "📋 Pegar lista completa"}
+            </button>
+
+            {mostrarPegar && (
+              <div
+                style={{
+                  background: colores.tarjeta,
+                  border: `1px solid ${colores.borde}`,
+                  borderRadius: "14px",
+                  padding: "16px",
+                  marginBottom: "20px",
+                }}
+              >
+                <p style={{ color: colores.textoSecundario, fontSize: "13px", marginBottom: "10px" }}>
+                  Una línea por producto: <strong>nombre, categoría, cantidad normal</strong>
+                </p>
+                <textarea
+                  value={textoPegado}
+                  onChange={(e) => setTextoPegado(e.target.value)}
+                  placeholder={"Ron Zacapa 23 años, Ron, 1\nWhisky Old Parr 750 ml, Whisky, 3"}
+                  rows={6}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    borderRadius: "8px",
+                    border: `1px solid ${colores.borde}`,
+                    background: "#0B1420",
+                    color: colores.texto,
+                    fontFamily: "monospace",
+                    fontSize: "13px",
+                    marginBottom: "10px",
+                  }}
+                />
+                <button
+                  onClick={cargarListaPegada}
+                  style={{
+                    background: colores.dorado,
+                    border: "none",
+                    borderRadius: "10px",
+                    padding: "10px 16px",
+                    color: "#0B1420",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cargar en la tabla
+                </button>
+              </div>
+            )}
+
             <div style={{ overflowX: "auto", marginBottom: "16px" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "700px" }}>
                 <thead>
