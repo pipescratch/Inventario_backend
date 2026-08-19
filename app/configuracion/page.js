@@ -193,6 +193,22 @@ export default function Configuracion() {
     }
   }
 
+  // Marca como "botella" la unidad de todas las categorías típicas de
+  // licor, para que aparezca el gráfico de botellas abiertas en Ver
+  // Inventario. Cervezas, gaseosas y otros quedan sin tocar.
+  const CATEGORIAS_BOTELLA = new Set([
+    "aguardiente", "ron", "whisky", "tequila", "vodka", "ginebra", "mezcal", "vino", "mezclador",
+  ]);
+  function marcarUnidadBotella() {
+    setFilas((prev) =>
+      prev.map((f) =>
+        CATEGORIAS_BOTELLA.has((f.categoria || "").toLowerCase().trim())
+          ? { ...f, unidad: "botella" }
+          : f
+      )
+    );
+  }
+
   function recalcularTodo() {
     setFilas((prev) =>
       prev.map((f) => {
@@ -362,6 +378,19 @@ export default function Configuracion() {
                 }}
               >
                 📄 Descargar PDF del catálogo
+              </button>
+              <button
+                onClick={marcarUnidadBotella}
+                style={{
+                  background: "none",
+                  border: `1px solid ${colores.acento}`,
+                  borderRadius: "10px",
+                  padding: "10px 16px",
+                  color: colores.acento,
+                  cursor: "pointer",
+                }}
+              >
+                🍾 Marcar licores como "botella"
               </button>
             </div>
 
