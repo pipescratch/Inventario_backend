@@ -1,90 +1,155 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 
-// El campo "items" de un pedido puede venir en dos formas:
-// - Array plano (pedidos antiguos de prueba)
-// - { ubicacion, lineas: [...] } (formato actual)
-// Estas funciones normalizan cualquiera de las dos.
-function lineasDe(items) {
-  if (Array.isArray(items)) return items;
-  if (items && Array.isArray(items.lineas)) return items.lineas;
-  return [];
-}
-function ubicacionDe(items) {
-  if (items && !Array.isArray(items) && items.ubicacion) return items.ubicacion;
-  return null;
-}
+const niveles = [
+  { id: "normal", label: "Normal", detalle: "Temporada baja" },
+  { id: "medio", label: "Medio", detalle: "Temporada media" },
+  { id: "alto", label: "Alto", detalle: "Alta temporada / eventos" },
+];
 
-function agruparPorProveedor(lineas) {
-  const grupos = {};
-  lineas.forEach((it) => {
-    const nombre = it.proveedor || "Sin proveedor";
-    if (!grupos[nombre]) grupos[nombre] = { proveedorNombre: nombre, items: [], total: 0 };
-    grupos[nombre].items.push(it);
-    grupos[nombre].total += Number(it.total) || 0;
+const ubicaciones = [
+  { id: "bar", label: "Bar" },
+  { id: "bodega", label: "Bodega" },
+];
+
+// Comprime una imagen en el navegador antes de enviarla,
+// para no pasar el límite de 4.5MB por request de Vercel.
+// Devuelve un Blob (no base64), porque el backend espera multipart/form-data.
+function comprimirImagen(file, maxWidth = 1600, calidad = 0.7) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const escala = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width * escala;
+        canvas.height = img.height * escala;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve({ blob, preview: canvas.toDataURL("image/jpeg", calidad) });
+            else reject(new Error("No se pudo comprimir la imagen"));
+          },
+          "image/jpeg",
+          calidad
+        );
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
   });
-  return Object.values(grupos);
 }
 
-function textoWhatsApp(grupo) {
-  const lineas = grupo.items.map(
-    (it) => `• ${it.nombre} — ${it.cantidad} un. — $${Math.round(it.total).toLocaleString("es-CO")}`
-  );
-  return `Pedido para ${grupo.proveedorNombre}\n\n${lineas.join("\n")}\n\nTotal: $${Math.round(grupo.total).toLocaleString("es-CO")}`;
+// Normaliza texto para comparar nombres (minúsculas, sin acentos, sin espacios extra)
+function normalizar(texto) {
+  return (texto || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-let cargandoJsPDF = null;
-function asegurarJsPDF() {
-  if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
-  if (cargandoJsPDF) return cargandoJsPDF;
-  cargandoJsPDF = new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
-    s.onload = () => (window.jspdf && window.jspdf.jsPDF) ? resolve(window.jspdf.jsPDF) : reject(new Error("jsPDF no cargó."));
-    s.onerror = () => reject(new Error("No se pudo cargar la librería de PDF."));
-    document.head.appendChild(s);
+function generarUUID() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
   });
-  return cargandoJsPDF;
+}
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+function nowTime() {
+  return new Date().toTimeString().slice(0, 5);
 }
 
-export default function Historial() {
-  const [vista, setVista] = useState("pedidos"); // pedidos | inventarios
-  const [pedidos, setPedidos] = useState([]);
-  const [inventarios, setInventarios] = useState([]);
-  const [cargando, setCargando] = useState(true);
+export default function Pedido() {
+  const [paso, setPaso] = useState("config"); // config | fotos | revisar | comparar
+  const [nivel, setNivel] = useState(null);
+  const [ubicacion, setUbicacion] = useState(null);
+  const [fotos, setFotos] = useState([]); // { preview, blob }
+  const [cargando, setCargando] = useState(false);
   const [error, setError] = useState(null);
-  const [expandido, setExpandido] = useState(null);
-  const [confirmandoId, setConfirmandoId] = useState(null);
-  const [editandoId, setEditandoId] = useState(null);
-  const [lineasEdicion, setLineasEdicion] = useState([]);
-  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
-  const [eliminandoId, setEliminandoId] = useState(null);
+  const [items, setItems] = useState(null);
+  const [catalogo, setCatalogo] = useState(null);
+  const [comparacion, setComparacion] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+  const [guardado, setGuardado] = useState(false);
+  const [pedidoPorProveedor, setPedidoPorProveedor] = useState(null);
   const [copiado, setCopiado] = useState(null);
-  const [recibiendoId, setRecibiendoId] = useState(null);
-  const [lineasRecepcion, setLineasRecepcion] = useState([]);
+  const [historialId, setHistorialId] = useState(null);
+  const [pedidoId, setPedidoId] = useState(null);
+  const [confirmando, setConfirmando] = useState(false);
+  const [pedidoConfirmado, setPedidoConfirmado] = useState(false);
 
-  useEffect(() => {
-    cargar();
-  }, []);
+  async function manejarSeleccionFotos(e) {
+    const archivos = Array.from(e.target.files || []);
+    if (archivos.length === 0) return;
 
-  async function cargar() {
+    setError(null);
+    const nuevas = [];
+    for (const file of archivos) {
+      try {
+        const { blob, preview } = await comprimirImagen(file);
+        nuevas.push({ preview, blob });
+      } catch {
+        setError("No se pudo procesar una de las imágenes. Intenta de nuevo.");
+      }
+    }
+    setFotos((prev) => [...prev, ...nuevas]);
+  }
+
+  function quitarFoto(index) {
+    setFotos((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function actualizarItem(index, campo, valor) {
+    setItems((prev) =>
+      prev.map((it, i) => (i === index ? { ...it, [campo]: valor } : it))
+    );
+  }
+
+  async function interpretarConIA() {
+    if (fotos.length === 0) {
+      setError("Sube al menos una foto del inventario.");
+      return;
+    }
     setCargando(true);
     setError(null);
     try {
-      const [resPedidos, resInv] = await Promise.all([
-        fetch("/api/tabla/pedidos"),
-        fetch("/api/tabla/historial_inventarios"),
-      ]);
-      const dataPedidos = await resPedidos.json();
-      const dataInv = await resInv.json();
-      if (dataPedidos.status === "ok") {
-        setPedidos(dataPedidos.filas.sort((a, b) => (b.fecha + b.hora).localeCompare(a.fecha + a.hora)));
+      const formData = new FormData();
+      fotos.forEach((f, i) => {
+        formData.append("files", f.blob, `foto-${i + 1}.jpg`);
+      });
+      formData.append("tipoCarga", "actual");
+      if (ubicacion) formData.append("ubicacion", ubicacion);
+
+      const res = await fetch("/api/inventory/interpret", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (data.status === "rate_limited") {
+        setError(
+          "El servicio de IA está ocupado por ahora. Tus fotos siguen cargadas, intenta de nuevo en unos segundos."
+        );
+        return;
       }
-      if (dataInv.status === "ok") {
-        setInventarios(dataInv.filas.sort((a, b) => (b.fecha + b.hora).localeCompare(a.fecha + a.hora)));
+      if (data.status !== "ok") {
+        setError(data.message || "No se pudo interpretar el inventario.");
+        return;
       }
+
+      setItems(data.items);
+      setPaso("revisar");
     } catch (err) {
       setError("No se pudo conectar con el servidor. " + err.message);
     } finally {
@@ -92,49 +157,90 @@ export default function Historial() {
     }
   }
 
-  // Marca un pedido pendiente como comprado: suma lo pedido al stock del
-  // producto (en la ubicación con la que se hizo ese pedido) y cambia el
-  // estado del pedido a "confirmado".
-  function empezarRecepcion(pedido) {
-    setRecibiendoId(pedido.id);
-    setLineasRecepcion(
-      lineasDe(pedido.items).map((l) => ({ ...l, recibido: l.recibido !== false, nota: l.nota || "" }))
-    );
-  }
-
-  function alternarRecibido(index) {
-    setLineasRecepcion((prev) =>
-      prev.map((l, i) => (i === index ? { ...l, recibido: !l.recibido } : l))
-    );
-  }
-
-  function actualizarNota(index, nota) {
-    setLineasRecepcion((prev) => prev.map((l, i) => (i === index ? { ...l, nota } : l)));
-  }
-
-  async function confirmarRecepcion(pedido) {
-    setConfirmandoId(pedido.id);
+  async function compararConCatalogo() {
+    setCargando(true);
     setError(null);
     try {
-      const ubicacion = ubicacionDe(pedido.items) || "bar";
-      const stockCampo = ubicacion === "bar" ? "stock_bar" : "stock_bodega";
-
-      const resProd = await fetch("/api/productos");
-      const dataProd = await resProd.json();
-      if (dataProd.status !== "ok") {
-        setError("No se pudo cargar el catálogo para actualizar el stock.");
+      const res = await fetch("/api/productos");
+      const data = await res.json();
+      if (data.status !== "ok") {
+        setError(data.message || "No se pudo cargar el catálogo de productos.");
         return;
       }
-      const catalogo = dataProd.productos;
+      setCatalogo(data.productos);
 
-      // Solo se suma al stock lo que realmente llegó. Lo marcado como
-      // faltante queda anotado en el pedido, sin sumarse al inventario.
-      const productosActualizados = lineasRecepcion
-        .filter((it) => it.productoId && it.recibido)
-        .map((it) => {
-          const original = catalogo.find((p) => p.id === it.productoId);
-          if (!original) return null;
-          const stockActual = Number(original[stockCampo]) || 0;
+      const objetivoCampo =
+        nivel === "normal" ? "stock_normal" : nivel === "medio" ? "stock_medio" : "stock_alto";
+      const stockCampo = ubicacion === "bar" ? "stock_bar" : "stock_bodega";
+
+      const filas = items.map((it) => {
+        const closedUnits = Number(it.closedUnits) || 0;
+        const openFraction = Number(it.openFraction) || 0;
+        // Para comparar contra el objetivo se sigue considerando lo abierto
+        // como parte del stock disponible (una botella abierta cuenta).
+        const cantidadDetectada = closedUnits + openFraction;
+        const nombreNormalizado = normalizar(it.rawName);
+        const match = data.productos.find(
+          (p) => normalizar(p.nombre) === nombreNormalizado
+        );
+        const objetivo = match ? match[objetivoCampo] || 0 : null;
+        // El pedido se calcula solo con botellas cerradas (enteras). Una
+        // botella abierta a la mitad no reduce lo que hay que comprar:
+        // esa fracción se registra aparte como botella de trabajo.
+        const diferencia = match ? Math.max(0, Math.ceil(objetivo - closedUnits)) : null;
+
+        return {
+          rawName: it.rawName,
+          closedUnits,
+          openFraction,
+          cantidadDetectada,
+          productoId: match ? match.id : null,
+          nombreProducto: match ? match.nombre : null,
+          objetivo,
+          diferencia,
+        };
+      });
+
+      setComparacion(filas);
+      setPaso("comparar");
+    } catch (err) {
+      setError("No se pudo conectar con el catálogo. " + err.message);
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  function asignarProducto(index, productoId) {
+    const producto = catalogo.find((p) => p.id === productoId);
+    const objetivoCampo =
+      nivel === "normal" ? "stock_normal" : nivel === "medio" ? "stock_medio" : "stock_alto";
+    setComparacion((prev) =>
+      prev.map((fila, i) => {
+        if (i !== index) return fila;
+        if (!producto) {
+          return { ...fila, productoId: null, nombreProducto: null, objetivo: null, diferencia: null };
+        }
+        const objetivo = producto[objetivoCampo] || 0;
+        return {
+          ...fila,
+          productoId: producto.id,
+          nombreProducto: producto.nombre,
+          objetivo,
+          diferencia: Math.max(0, Math.ceil(objetivo - fila.closedUnits)),
+        };
+      })
+    );
+  }
+
+  async function guardarConteo() {
+    setGuardando(true);
+    setError(null);
+    try {
+      const stockCampo = ubicacion === "bar" ? "stock_bar" : "stock_bodega";
+      const productosActualizados = comparacion
+        .filter((f) => f.productoId)
+        .map((f) => {
+          const original = catalogo.find((p) => p.id === f.productoId);
           return {
             id: original.id,
             nombre: original.nombre,
@@ -143,111 +249,205 @@ export default function Historial() {
             stockNormal: original.stock_normal,
             stockMedio: original.stock_medio,
             stockAlto: original.stock_alto,
-            stockBar: stockCampo === "stock_bar" ? stockActual + it.cantidad : original.stock_bar,
-            stockBodega: stockCampo === "stock_bodega" ? stockActual + it.cantidad : original.stock_bodega,
+            // El stock cerrado solo cuenta botellas cerradas.
+            // La fracción abierta se registra aparte como botella de trabajo.
+            stockBar: stockCampo === "stock_bar" ? f.closedUnits : original.stock_bar,
+            stockBodega: stockCampo === "stock_bodega" ? f.closedUnits : original.stock_bodega,
             estado: original.estado,
           };
-        })
-        .filter(Boolean);
+        });
 
-      if (productosActualizados.length > 0) {
-        await fetch("/api/productos", {
+      if (productosActualizados.length === 0) {
+        setError("No hay productos identificados para guardar.");
+        return;
+      }
+
+      // Cualquier producto detectado con fracción abierta (>0) pasa
+      // automáticamente a "Botellas abiertas" en Ver Inventario, con el
+      // gráfico de 12 medidas verde→rojo.
+      const conBotellaAbierta = comparacion.filter((f) => f.productoId && f.openFraction > 0);
+      if (conBotellaAbierta.length > 0) {
+        const resBot = await fetch("/api/tabla/botellas_trabajo");
+        const dataBot = await resBot.json();
+        const botellasExistentes = dataBot.status === "ok" ? dataBot.filas : [];
+
+        const botellasNuevas = conBotellaAbierta.map((f) => {
+          const existente = botellasExistentes.find(
+            (b) => b.producto_id === f.productoId && b.estacion_id === "barra" && b.estado === "activa"
+          );
+          const tragos = Math.round(f.openFraction * 12);
+          return {
+            id: existente ? existente.id : generarUUID(),
+            producto_id: f.productoId,
+            estacion_id: "barra",
+            tragos,
+            cantidad_inicial: existente ? existente.cantidad_inicial : 12,
+            fecha_apertura: existente ? existente.fecha_apertura : today(),
+            hora_apertura: existente ? existente.hora_apertura : nowTime(),
+            estado: "activa",
+          };
+        });
+
+        await fetch("/api/tabla/botellas_trabajo", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productos: productosActualizados }),
+          body: JSON.stringify({ filas: botellasNuevas }),
         });
       }
 
-      await fetch("/api/tabla/pedidos", {
+      const res = await fetch("/api/productos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filas: [{ ...pedido, estado: "confirmado", items: { ubicacion, lineas: lineasRecepcion } }],
-        }),
+        body: JSON.stringify({ productos: productosActualizados }),
       });
+      const data = await res.json();
+      if (data.status !== "ok") {
+        setError(data.message || "No se pudo guardar el conteo.");
+        return;
+      }
+      setGuardado(true);
 
-      setRecibiendoId(null);
-      await cargar();
+      // Guarda una foto fija de este conteo en el historial, con su fecha.
+      const registroHistorial = {
+        id: generarUUID(),
+        fecha: today(),
+        hora: nowTime(),
+        nivel,
+        ubicacion,
+        items: comparacion,
+      };
+      await fetch("/api/tabla/historial_inventarios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filas: [registroHistorial] }),
+      });
+      setHistorialId(registroHistorial.id);
+
+      await armarPedidoPorProveedor();
     } catch (err) {
-      setError("No se pudo confirmar la recepción. " + err.message);
+      setError("No se pudo guardar. " + err.message);
     } finally {
-      setConfirmandoId(null);
+      setGuardando(false);
     }
   }
 
-  function empezarEdicion(pedido) {
-    setEditandoId(pedido.id);
-    setLineasEdicion(lineasDe(pedido.items).map((l) => ({ ...l })));
+  // Cruza los productos a comprar (los que tienen diferencia > 0) contra
+  // los precios registrados por proveedor, y elige automáticamente el
+  // proveedor más barato para cada producto. Agrupa el resultado por
+  // proveedor para poder copiarlo como pedido en WhatsApp.
+  async function armarPedidoPorProveedor() {
+    try {
+      const res = await fetch("/api/tabla/precios_proveedor");
+      const data = await res.json();
+      const precios = data.status === "ok" ? data.filas : [];
+
+      const aComprar = comparacion.filter((f) => f.productoId && f.diferencia > 0);
+
+      const grupos = {}; // proveedorId -> { nombre, items: [], total }
+      const sinProveedor = [];
+
+      aComprar.forEach((item) => {
+        const opciones = precios
+          .filter((p) => p.producto_id === item.productoId)
+          .sort((a, b) => a.precio - b.precio);
+
+        if (opciones.length === 0) {
+          sinProveedor.push(item);
+          return;
+        }
+
+        const mejor = opciones[0];
+        const totalItem = mejor.precio * item.diferencia;
+
+        if (!grupos[mejor.proveedor_id]) {
+          grupos[mejor.proveedor_id] = {
+            proveedorId: mejor.proveedor_id,
+            proveedorNombre: mejor.proveedor_nombre,
+            items: [],
+            total: 0,
+          };
+        }
+        grupos[mejor.proveedor_id].items.push({
+          productoId: item.productoId,
+          nombre: item.rawName,
+          cantidad: item.diferencia,
+          precio: mejor.precio,
+          total: totalItem,
+        });
+        grupos[mejor.proveedor_id].total += totalItem;
+      });
+
+      const pedidoArmado = {
+        grupos: Object.values(grupos).sort((a, b) => a.proveedorNombre.localeCompare(b.proveedorNombre)),
+        sinProveedor,
+      };
+      setPedidoPorProveedor(pedidoArmado);
+
+      // Se guarda de inmediato como "pendiente", para que quede en el
+      // Historial aunque no se confirme la compra en este mismo momento.
+      const todosLosItems = pedidoArmado.grupos.flatMap((g) =>
+        g.items.map((it) => ({ ...it, proveedor: g.proveedorNombre }))
+      );
+      const costoTotal = pedidoArmado.grupos.reduce((s, g) => s + g.total, 0);
+
+      if (todosLosItems.length > 0) {
+        const resPedidos = await fetch("/api/tabla/pedidos");
+        const dataPedidos = await resPedidos.json();
+        const numero = (dataPedidos.status === "ok" ? dataPedidos.filas.length : 0) + 1;
+        const idNuevo = generarUUID();
+
+        await fetch("/api/tabla/pedidos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filas: [
+              {
+                id: idNuevo,
+                numero,
+                fecha: today(),
+                hora: nowTime(),
+                nivel,
+                estado: "pendiente",
+                items: { ubicacion, lineas: todosLosItems },
+                costo_total: costoTotal,
+                inventario_id: historialId,
+              },
+            ],
+          }),
+        });
+        setPedidoId(idNuevo);
+      }
+
+      setPaso("resumen");
+    } catch (err) {
+      setError("No se pudo armar el pedido por proveedor. " + err.message);
+    }
   }
 
-  function actualizarCantidadEdicion(index, cantidad) {
-    setLineasEdicion((prev) =>
-      prev.map((l, i) =>
-        i === index
-          ? { ...l, cantidad, total: Math.round((Number(l.precio) || 0) * (Number(cantidad) || 0) * 100) / 100 }
-          : l
-      )
+  function textoWhatsApp(grupo) {
+    const lineas = grupo.items.map(
+      (it) => `• ${it.nombre} — ${it.cantidad} un. — $${Math.round(it.total).toLocaleString("es-CO")}`
     );
+    return `Pedido para ${grupo.proveedorNombre}\n\n${lineas.join("\n")}\n\nTotal: $${Math.round(grupo.total).toLocaleString("es-CO")}`;
   }
 
-  function quitarLineaEdicion(index) {
-    setLineasEdicion((prev) => prev.filter((_, i) => i !== index));
+  // Carga jsPDF desde cdnjs solo cuando hace falta, para no pesar la app
+  // el resto del tiempo. Reutiliza la carga si ya se hizo antes.
+  let cargandoJsPDF = null;
+  function asegurarJsPDF() {
+    if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+    if (cargandoJsPDF) return cargandoJsPDF;
+    cargandoJsPDF = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+      s.onload = () => (window.jspdf && window.jspdf.jsPDF) ? resolve(window.jspdf.jsPDF) : reject(new Error("jsPDF no cargó."));
+      s.onerror = () => reject(new Error("No se pudo cargar la librería de PDF."));
+      document.head.appendChild(s);
+    });
+    return cargandoJsPDF;
   }
 
-  async function guardarEdicion(pedido) {
-    setGuardandoEdicion(true);
-    setError(null);
-    try {
-      const ubicacion = ubicacionDe(pedido.items) || "bar";
-      const costoTotal = lineasEdicion.reduce((s, l) => s + (Number(l.total) || 0), 0);
-      await fetch("/api/tabla/pedidos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filas: [
-            {
-              ...pedido,
-              items: { ubicacion, lineas: lineasEdicion },
-              costo_total: costoTotal,
-            },
-          ],
-        }),
-      });
-      setEditandoId(null);
-      await cargar();
-    } catch (err) {
-      setError("No se pudo guardar la edición. " + err.message);
-    } finally {
-      setGuardandoEdicion(false);
-    }
-  }
-
-  async function eliminarPedido(id) {
-    const confirmar = window.confirm("¿Seguro que quieres borrar este pedido? No se puede deshacer.");
-    if (!confirmar) return;
-    setEliminandoId(id);
-    setError(null);
-    try {
-      await fetch(`/api/tabla/pedidos?id=${id}`, { method: "DELETE" });
-      await cargar();
-    } catch (err) {
-      setError("No se pudo borrar. " + err.message);
-    } finally {
-      setEliminandoId(null);
-    }
-  }
-
-  async function copiarWhatsApp(grupo, pedidoId) {
-    try {
-      await navigator.clipboard.writeText(textoWhatsApp(grupo));
-      setCopiado(pedidoId + grupo.proveedorNombre);
-      setTimeout(() => setCopiado(null), 2000);
-    } catch {
-      setError("No se pudo copiar. Selecciona y copia el texto manualmente.");
-    }
-  }
-
-  async function descargarPDF(pedido) {
+  async function descargarPDF() {
     setError(null);
     try {
       const JsPDF = await asegurarJsPDF();
@@ -258,14 +458,17 @@ export default function Historial() {
       y += 7;
       doc.setFontSize(10);
       doc.setTextColor(90);
-      doc.text(`Pedido #${pedido.numero} · ${pedido.fecha} · ${pedido.hora} · Nivel ${pedido.nivel}`, 14, y);
+      doc.text(
+        `${today()} · ${nowTime()} · Nivel ${niveles.find((n) => n.id === nivel)?.label}`,
+        14,
+        y
+      );
       doc.setTextColor(0);
       y += 10;
 
-      const gruposPdf = agruparPorProveedor(lineasDe(pedido.items));
       let totalGeneral = 0;
 
-      gruposPdf.forEach((grupo) => {
+      pedidoPorProveedor.grupos.forEach((grupo) => {
         if (y > 265) {
           doc.addPage();
           y = 16;
@@ -309,9 +512,103 @@ export default function Historial() {
       doc.setFont(undefined, "bold");
       doc.text(`TOTAL GENERAL: $${Math.round(totalGeneral).toLocaleString("es-CO")}`, 14, y + 6);
 
-      doc.save(`pedido-${pedido.numero}-${pedido.fecha}.pdf`);
+      doc.save(`pedido-${today()}.pdf`);
     } catch (err) {
       setError("No se pudo generar el PDF. " + err.message);
+    }
+  }
+
+  async function copiarPedido(grupo) {
+    const texto = textoWhatsApp(grupo);
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopiado(grupo.proveedorId);
+      setTimeout(() => setCopiado(null), 2000);
+    } catch {
+      setError("No se pudo copiar. Selecciona y copia el texto manualmente.");
+    }
+  }
+
+  // Al confirmar el pedido: 1) lo guarda en el historial de pedidos con su
+  // fecha, y 2) actualiza el stock de cada producto comprado, sumando la
+  // cantidad pedida a lo que ya había — dejando el inventario "completo"
+  // (al nivel objetivo) y listo para trabajar hasta el próximo reporte.
+  async function confirmarPedido() {
+    setConfirmando(true);
+    setError(null);
+    try {
+      const todosLosItems = [
+        ...pedidoPorProveedor.grupos.flatMap((g) =>
+          g.items.map((it) => ({ ...it, proveedor: g.proveedorNombre }))
+        ),
+      ];
+      const costoTotal = pedidoPorProveedor.grupos.reduce((s, g) => s + g.total, 0);
+
+      // Actualiza el mismo registro que ya quedó guardado como "pendiente"
+      // al armar el pedido, marcándolo ahora como "confirmado".
+      const resPedidos = await fetch("/api/tabla/pedidos");
+      const dataPedidos = await resPedidos.json();
+      const numero = pedidoId && dataPedidos.status === "ok"
+        ? dataPedidos.filas.find((p) => p.id === pedidoId)?.numero
+        : (dataPedidos.status === "ok" ? dataPedidos.filas.length : 0) + 1;
+
+      await fetch("/api/tabla/pedidos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filas: [
+            {
+              id: pedidoId || generarUUID(),
+              numero,
+              fecha: today(),
+              hora: nowTime(),
+              nivel,
+              estado: "confirmado",
+              items: { ubicacion, lineas: todosLosItems },
+              costo_total: costoTotal,
+              inventario_id: historialId,
+            },
+          ],
+        }),
+      });
+
+      // Actualiza el stock: suma lo comprado a lo que había, dejando el
+      // inventario completo hasta el siguiente reporte.
+      const stockCampo = ubicacion === "bar" ? "stock_bar" : "stock_bodega";
+      const productosActualizados = todosLosItems
+        .filter((it) => it.productoId)
+        .map((it) => {
+          const original = catalogo.find((p) => p.id === it.productoId);
+          if (!original) return null;
+          const stockActual = Number(original[stockCampo]) || 0;
+          return {
+            id: original.id,
+            nombre: original.nombre,
+            categoria: original.categoria,
+            unidad: original.unidad,
+            stockNormal: original.stock_normal,
+            stockMedio: original.stock_medio,
+            stockAlto: original.stock_alto,
+            stockBar: stockCampo === "stock_bar" ? stockActual + it.cantidad : original.stock_bar,
+            stockBodega: stockCampo === "stock_bodega" ? stockActual + it.cantidad : original.stock_bodega,
+            estado: original.estado,
+          };
+        })
+        .filter(Boolean);
+
+      if (productosActualizados.length > 0) {
+        await fetch("/api/productos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productos: productosActualizados }),
+        });
+      }
+
+      setPedidoConfirmado(true);
+    } catch (err) {
+      setError("No se pudo confirmar el pedido. " + err.message);
+    } finally {
+      setConfirmando(false);
     }
   }
 
@@ -337,343 +634,431 @@ export default function Historial() {
     >
       <div style={{ maxWidth: "720px", margin: "0 auto", padding: "32px 20px" }}>
         <div style={{ marginBottom: "24px" }}>
-          <Link href="/" style={{ color: colores.textoSecundario, textDecoration: "none", fontSize: "14px" }}>
+          <Link
+            href="/"
+            style={{ color: colores.textoSecundario, textDecoration: "none", fontSize: "14px" }}
+          >
             ← Inicio
           </Link>
         </div>
 
-        <h1 style={{ fontSize: "28px", fontWeight: 700, marginBottom: "20px" }}>Historial</h1>
+        <h1 style={{ fontSize: "28px", fontWeight: 700, marginBottom: "8px" }}>
+          Hacer pedido semanal
+        </h1>
+        <p style={{ color: colores.textoSecundario, marginBottom: "32px" }}>
+          {paso === "config" && "Paso 1 de 3 — Nivel y ubicación"}
+          {paso === "fotos" && "Paso 2 de 3 — Sube las fotos del inventario"}
+          {paso === "revisar" && "Paso 3 de 3 — Revisa lo detectado"}
+        </p>
 
-        <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
-          <button
-            onClick={() => setVista("pedidos")}
-            style={{
-              flex: 1,
-              padding: "10px",
-              borderRadius: "10px",
-              border: `1px solid ${vista === "pedidos" ? colores.acento : colores.borde}`,
-              background: vista === "pedidos" ? "rgba(45,212,191,0.1)" : colores.tarjeta,
-              color: vista === "pedidos" ? colores.acento : colores.textoSecundario,
-              cursor: "pointer",
-              fontWeight: 700,
-            }}
-          >
-            Pedidos
-          </button>
-          <button
-            onClick={() => setVista("inventarios")}
-            style={{
-              flex: 1,
-              padding: "10px",
-              borderRadius: "10px",
-              border: `1px solid ${vista === "inventarios" ? colores.acento : colores.borde}`,
-              background: vista === "inventarios" ? "rgba(45,212,191,0.1)" : colores.tarjeta,
-              color: vista === "inventarios" ? colores.acento : colores.textoSecundario,
-              cursor: "pointer",
-              fontWeight: 700,
-            }}
-          >
-            Conteos de inventario
-          </button>
-        </div>
+        {/* Paso 1: nivel + ubicación */}
+        {paso === "config" && (
+          <div>
+            <p style={{ fontWeight: 600, marginBottom: "12px" }}>Nivel de operación</p>
+            <div style={{ display: "grid", gap: "10px", marginBottom: "28px" }}>
+              {niveles.map((n) => (
+                <button
+                  key={n.id}
+                  onClick={() => setNivel(n.id)}
+                  style={{
+                    textAlign: "left",
+                    background: colores.tarjeta,
+                    border: `1px solid ${nivel === n.id ? colores.acento : colores.borde}`,
+                    borderRadius: "14px",
+                    padding: "16px",
+                    color: colores.texto,
+                    cursor: "pointer",
+                    fontSize: "16px",
+                    fontWeight: 700,
+                  }}
+                >
+                  {n.label}
+                  <div style={{ color: colores.textoSecundario, fontWeight: 400, fontSize: "13px" }}>
+                    {n.detalle}
+                  </div>
+                </button>
+              ))}
+            </div>
 
-        {error && <p style={{ color: "#F87171", marginBottom: "16px" }}>{error}</p>}
+            <p style={{ fontWeight: 600, marginBottom: "12px" }}>Ubicación</p>
+            <div style={{ display: "flex", gap: "10px", marginBottom: "28px" }}>
+              {ubicaciones.map((u) => (
+                <button
+                  key={u.id}
+                  onClick={() => setUbicacion(u.id)}
+                  style={{
+                    flex: 1,
+                    background: colores.tarjeta,
+                    border: `1px solid ${ubicacion === u.id ? colores.acento : colores.borde}`,
+                    borderRadius: "14px",
+                    padding: "16px",
+                    color: colores.texto,
+                    cursor: "pointer",
+                    fontWeight: 700,
+                  }}
+                >
+                  {u.label}
+                </button>
+              ))}
+            </div>
 
-        {cargando ? (
-          <p style={{ color: colores.textoSecundario }}>Cargando...</p>
-        ) : vista === "pedidos" ? (
-          pedidos.length === 0 ? (
-            <p style={{ color: colores.textoSecundario }}>Todavía no hay pedidos.</p>
-          ) : (
-            <div style={{ display: "grid", gap: "10px" }}>
-              {pedidos.map((p) => {
-                const abierto = expandido === p.id;
-                const lineas = lineasDe(p.items);
-                const pendiente = p.estado === "pendiente";
-                return (
-                  <div
-                    key={p.id}
-                    style={{
-                      background: colores.tarjeta,
-                      border: `1px solid ${pendiente ? colores.alerta : colores.borde}`,
-                      borderRadius: "14px",
-                      padding: "16px",
-                    }}
-                  >
+            <button
+              onClick={() => setPaso("fotos")}
+              disabled={!nivel || !ubicacion}
+              style={{
+                width: "100%",
+                padding: "16px",
+                borderRadius: "12px",
+                border: "none",
+                background: nivel && ubicacion ? colores.dorado : colores.borde,
+                color: "#0B1420",
+                fontWeight: 700,
+                fontSize: "16px",
+                cursor: nivel && ubicacion ? "pointer" : "default",
+              }}
+            >
+              Continuar
+            </button>
+          </div>
+        )}
+
+        {/* Paso 2: subir fotos */}
+        {paso === "fotos" && (
+          <div>
+            <p style={{ marginBottom: "16px", color: colores.textoSecundario }}>
+              <strong style={{ color: colores.acento }}>
+                {niveles.find((n) => n.id === nivel)?.label}
+              </strong>{" "}
+              ·{" "}
+              <strong style={{ color: colores.acento }}>
+                {ubicaciones.find((u) => u.id === ubicacion)?.label}
+              </strong>{" "}
+              <button
+                onClick={() => setPaso("config")}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: colores.textoSecundario,
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                }}
+              >
+                cambiar
+              </button>
+            </p>
+
+            <label
+              style={{
+                display: "block",
+                textAlign: "center",
+                background: colores.tarjeta,
+                border: `1px dashed ${colores.borde}`,
+                borderRadius: "16px",
+                padding: "32px",
+                cursor: "pointer",
+                marginBottom: "16px",
+              }}
+            >
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={manejarSeleccionFotos}
+                style={{ display: "none" }}
+              />
+              <div style={{ fontSize: "32px", marginBottom: "8px" }}>📸</div>
+              <div>Toca para tomar o subir fotos</div>
+              <div style={{ color: colores.textoSecundario, fontSize: "13px" }}>
+                Puedes subir varias a la vez
+              </div>
+            </label>
+
+            {fotos.length > 0 && (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, 1fr)",
+                  gap: "8px",
+                  marginBottom: "16px",
+                }}
+              >
+                {fotos.map((f, i) => (
+                  <div key={i} style={{ position: "relative" }}>
+                    <img
+                      src={f.preview}
+                      alt={`Foto ${i + 1}`}
+                      style={{ width: "100%", height: "100px", objectFit: "cover", borderRadius: "8px" }}
+                    />
                     <button
-                      onClick={() => setExpandido(abierto ? null : p.id)}
-                      style={{ background: "none", border: "none", width: "100%", textAlign: "left", cursor: "pointer" }}
+                      onClick={() => quitarFoto(i)}
+                      style={{
+                        position: "absolute",
+                        top: "4px",
+                        right: "4px",
+                        background: "#0B1420",
+                        color: colores.texto,
+                        border: "none",
+                        borderRadius: "999px",
+                        width: "22px",
+                        height: "22px",
+                        cursor: "pointer",
+                      }}
                     >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div>
-                          <div style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
-                            Pedido #{p.numero}
-                            <span
-                              style={{
-                                fontSize: "10px",
-                                fontWeight: 700,
-                                textTransform: "uppercase",
-                                padding: "2px 8px",
-                                borderRadius: "999px",
-                                background: pendiente ? `${colores.alerta}22` : `${colores.acento}22`,
-                                color: pendiente ? colores.alerta : colores.acento,
-                              }}
-                            >
-                              {pendiente ? "Pendiente" : "Comprado"}
-                            </span>
-                          </div>
-                          <div style={{ color: colores.textoSecundario, fontSize: "13px" }}>
-                            {p.fecha} · {p.hora} · Nivel {p.nivel}
-                          </div>
-                        </div>
-                        <span style={{ color: colores.dorado, fontWeight: 700 }}>
-                          ${Math.round(p.costo_total || 0).toLocaleString("es-CO")}
-                        </span>
-                      </div>
+                      ×
                     </button>
-                    {abierto && editandoId !== p.id && (
-                      <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: `1px solid ${colores.borde}` }}>
-                        {lineas.map((it, i) => (
-                          <div key={i} style={{ padding: "4px 0" }}>
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                fontSize: "13px",
-                                color: it.recibido === false ? "#F87171" : colores.textoSecundario,
-                              }}
-                            >
-                              <span>
-                                {it.recibido === false && "⚠️ "}
-                                {it.nombre} × {it.cantidad} ({it.proveedor})
-                              </span>
-                              <span>${Math.round(it.total).toLocaleString("es-CO")}</span>
-                            </div>
-                            {it.recibido === false && it.nota && (
-                              <div style={{ fontSize: "11px", color: "#F87171", marginTop: "2px" }}>
-                                Faltante: {it.nota}
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                  </div>
+                ))}
+              </div>
+            )}
 
-                        <button
-                          onClick={() => descargarPDF(p)}
-                          style={{
-                            width: "100%",
-                            marginTop: "12px",
-                            padding: "10px",
-                            borderRadius: "8px",
-                            border: `1px solid ${colores.dorado}`,
-                            background: "none",
-                            color: colores.dorado,
-                            fontWeight: 700,
-                            fontSize: "13px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          📄 Descargar PDF completo
-                        </button>
+            {error && <p style={{ color: "#F87171", marginBottom: "16px" }}>{error}</p>}
 
-                        <div style={{ display: "grid", gap: "6px", marginTop: "8px" }}>
-                          {agruparPorProveedor(lineas).map((grupo) => (
-                            <button
-                              key={grupo.proveedorNombre}
-                              onClick={() => copiarWhatsApp(grupo, p.id)}
-                              style={{
-                                width: "100%",
-                                padding: "10px",
-                                borderRadius: "8px",
-                                border: `1px solid ${colores.acento}`,
-                                background: copiado === p.id + grupo.proveedorNombre ? colores.acento : "none",
-                                color: copiado === p.id + grupo.proveedorNombre ? "#0B1420" : colores.acento,
-                                fontWeight: 700,
-                                fontSize: "13px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              {copiado === p.id + grupo.proveedorNombre
-                                ? "✓ Copiado"
-                                : `WhatsApp — ${grupo.proveedorNombre}`}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+            <button
+              onClick={interpretarConIA}
+              disabled={cargando || fotos.length === 0}
+              style={{
+                width: "100%",
+                padding: "16px",
+                borderRadius: "12px",
+                border: "none",
+                background: cargando ? colores.borde : colores.dorado,
+                color: "#0B1420",
+                fontWeight: 700,
+                fontSize: "16px",
+                cursor: cargando ? "default" : "pointer",
+              }}
+            >
+              {cargando ? "Interpretando con IA..." : "Interpretar con IA"}
+            </button>
+          </div>
+        )}
 
-                    {editandoId === p.id && (
-                      <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: `1px solid ${colores.borde}` }}>
-                        {lineasEdicion.map((it, i) => (
-                          <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-                            <span style={{ flex: 1, fontSize: "13px" }}>{it.nombre}</span>
-                            <input
-                              type="number"
-                              value={it.cantidad}
-                              onChange={(e) => actualizarCantidadEdicion(i, Number(e.target.value))}
-                              style={{
-                                width: "70px",
-                                padding: "6px",
-                                borderRadius: "6px",
-                                border: `1px solid ${colores.borde}`,
-                                background: "#0B1420",
-                                color: colores.texto,
-                                fontSize: "13px",
-                              }}
-                            />
-                            <button
-                              onClick={() => quitarLineaEdicion(i)}
-                              style={{ background: "none", border: "none", color: "#F87171", cursor: "pointer", fontSize: "16px" }}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
-                        <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                          <button
-                            onClick={() => setEditandoId(null)}
-                            style={{ flex: 1, padding: "10px", borderRadius: "8px", border: `1px solid ${colores.borde}`, background: "none", color: colores.textoSecundario, cursor: "pointer" }}
-                          >
-                            Cancelar
-                          </button>
-                          <button
-                            onClick={() => guardarEdicion(p)}
-                            disabled={guardandoEdicion}
-                            style={{ flex: 1, padding: "10px", borderRadius: "8px", border: "none", background: colores.acento, color: "#0B1420", fontWeight: 700, cursor: "pointer" }}
-                          >
-                            {guardandoEdicion ? "Guardando..." : "Guardar cambios"}
-                          </button>
-                        </div>
-                      </div>
-                    )}
+        {/* Paso 3: revisar items detectados */}
+        {paso === "revisar" && items && (
+          <div>
+            {items.length === 0 && (
+              <p style={{ color: colores.textoSecundario }}>
+                No se detectó ningún producto en las fotos.
+              </p>
+            )}
 
-                    {recibiendoId === p.id && (
-                      <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: `1px solid ${colores.borde}` }}>
-                        <p style={{ color: colores.textoSecundario, fontSize: "13px", marginBottom: "10px" }}>
-                          Marca qué llegó realmente. Lo que no llegue no se suma al inventario.
-                        </p>
-                        {lineasRecepcion.map((it, i) => (
-                          <div
-                            key={i}
-                            style={{
-                              background: it.recibido ? "transparent" : "rgba(248,113,113,0.08)",
-                              borderRadius: "8px",
-                              padding: "8px",
-                              marginBottom: "8px",
-                            }}
-                          >
-                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                              <input
-                                type="checkbox"
-                                checked={it.recibido}
-                                onChange={() => alternarRecibido(i)}
-                                style={{ width: "18px", height: "18px" }}
-                              />
-                              <span style={{ flex: 1, fontSize: "13px" }}>
-                                {it.nombre} × {it.cantidad}
-                              </span>
-                              {!it.recibido && <span style={{ fontSize: "16px" }}>⚠️</span>}
-                            </div>
-                            {!it.recibido && (
-                              <input
-                                value={it.nota}
-                                onChange={(e) => actualizarNota(i, e.target.value)}
-                                placeholder="Nota: ¿por qué falta? (ej. agotado con el proveedor)"
-                                style={{
-                                  width: "100%",
-                                  marginTop: "6px",
-                                  padding: "8px",
-                                  borderRadius: "6px",
-                                  border: `1px solid ${colores.alerta}`,
-                                  background: "#0B1420",
-                                  color: colores.texto,
-                                  fontSize: "12px",
-                                }}
-                              />
-                            )}
-                          </div>
-                        ))}
-                        <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                          <button
-                            onClick={() => setRecibiendoId(null)}
-                            style={{ flex: 1, padding: "10px", borderRadius: "8px", border: `1px solid ${colores.borde}`, background: "none", color: colores.textoSecundario, cursor: "pointer" }}
-                          >
-                            Cancelar
-                          </button>
-                          <button
-                            onClick={() => confirmarRecepcion(p)}
-                            disabled={confirmandoId === p.id}
-                            style={{ flex: 1, padding: "10px", borderRadius: "8px", border: "none", background: colores.dorado, color: "#0B1420", fontWeight: 700, cursor: "pointer" }}
-                          >
-                            {confirmandoId === p.id ? "Guardando..." : "✓ Confirmar recepción"}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {pendiente && editandoId !== p.id && recibiendoId !== p.id && (
-                      <div style={{ display: "flex", gap: "8px", marginTop: "12px", flexWrap: "wrap" }}>
-                        <button
-                          onClick={() => empezarRecepcion(p)}
-                          style={{
-                            flex: "1 1 140px",
-                            padding: "12px",
-                            borderRadius: "10px",
-                            border: "none",
-                            background: colores.dorado,
-                            color: "#0B1420",
-                            fontWeight: 700,
-                            cursor: "pointer",
-                          }}
-                        >
-                          ✓ Comprado
-                        </button>
-                        <button
-                          onClick={() => empezarEdicion(p)}
-                          style={{
-                            flex: "1 1 100px",
-                            padding: "12px",
-                            borderRadius: "10px",
-                            border: `1px solid ${colores.acento}`,
-                            background: "none",
-                            color: colores.acento,
-                            fontWeight: 700,
-                            cursor: "pointer",
-                          }}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => eliminarPedido(p.id)}
-                          disabled={eliminandoId === p.id}
-                          style={{
-                            flex: "1 1 100px",
-                            padding: "12px",
-                            borderRadius: "10px",
-                            border: "1px solid #F87171",
-                            background: "none",
-                            color: "#F87171",
-                            fontWeight: 700,
-                            cursor: eliminandoId === p.id ? "default" : "pointer",
-                          }}
-                        >
-                          {eliminandoId === p.id ? "Borrando..." : "Borrar"}
-                        </button>
-                      </div>
+            <div style={{ display: "grid", gap: "10px", marginBottom: "24px" }}>
+              {items.map((it, i) => (
+                <div
+                  key={i}
+                  style={{
+                    background: colores.tarjeta,
+                    border: `1px solid ${it.needsReview ? colores.alerta : colores.borde}`,
+                    borderRadius: "14px",
+                    padding: "16px",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "10px" }}>
+                    <span style={{ fontWeight: 700 }}>{it.rawName}</span>
+                    {it.needsReview && (
+                      <span style={{ color: colores.alerta, fontSize: "12px", fontWeight: 700 }}>
+                        Revisar
+                      </span>
                     )}
                   </div>
-                );
-              })}
+                  <div style={{ display: "flex", gap: "12px" }}>
+                    <label style={{ flex: 1, fontSize: "13px", color: colores.textoSecundario }}>
+                      Botellas cerradas
+                      <input
+                        type="number"
+                        value={it.closedUnits ?? ""}
+                        onChange={(e) => actualizarItem(i, "closedUnits", Number(e.target.value))}
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          marginTop: "4px",
+                          padding: "10px",
+                          borderRadius: "8px",
+                          border: `1px solid ${colores.borde}`,
+                          background: "#0B1420",
+                          color: colores.texto,
+                        }}
+                      />
+                    </label>
+                    <label style={{ flex: 1, fontSize: "13px", color: colores.textoSecundario }}>
+                      Fracción abierta
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="1"
+                        value={it.openFraction ?? ""}
+                        onChange={(e) => actualizarItem(i, "openFraction", Number(e.target.value))}
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          marginTop: "4px",
+                          padding: "10px",
+                          borderRadius: "8px",
+                          border: `1px solid ${colores.borde}`,
+                          background: "#0B1420",
+                          color: colores.texto,
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              ))}
             </div>
-          )
-        ) : inventarios.length === 0 ? (
-          <p style={{ color: colores.textoSecundario }}>Todavía no hay conteos guardados.</p>
-        ) : (
-          <div style={{ display: "grid", gap: "10px" }}>
-            {inventarios.map((inv) => {
-              const abierto = expandido === inv.id;
-              return (
+
+            {error && <p style={{ color: "#F87171", marginBottom: "16px" }}>{error}</p>}
+
+            <button
+              onClick={compararConCatalogo}
+              disabled={cargando}
+              style={{
+                width: "100%",
+                padding: "16px",
+                borderRadius: "12px",
+                border: "none",
+                background: cargando ? colores.borde : colores.dorado,
+                color: "#0B1420",
+                fontWeight: 700,
+                fontSize: "16px",
+                cursor: cargando ? "default" : "pointer",
+              }}
+            >
+              {cargando ? "Comparando..." : "Comparar con catálogo"}
+            </button>
+          </div>
+        )}
+
+        {/* Paso 4: comparar contra catálogo y guardar */}
+        {paso === "comparar" && comparacion && (
+          <div>
+            <div style={{ display: "grid", gap: "10px", marginBottom: "24px" }}>
+              {comparacion.map((f, i) => (
                 <div
-                  key={inv.id}
+                  key={i}
+                  style={{
+                    background: colores.tarjeta,
+                    border: `1px solid ${f.productoId ? colores.borde : colores.alerta}`,
+                    borderRadius: "14px",
+                    padding: "16px",
+                  }}
+                >
+                  <div style={{ fontWeight: 700, marginBottom: "8px" }}>{f.rawName}</div>
+
+                  {!f.productoId && (
+                    <div style={{ marginBottom: "8px" }}>
+                      <span style={{ color: colores.alerta, fontSize: "12px", fontWeight: 700 }}>
+                        No coincide con ningún producto del catálogo
+                      </span>
+                      <select
+                        onChange={(e) => asignarProducto(i, e.target.value || null)}
+                        defaultValue=""
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          marginTop: "6px",
+                          padding: "10px",
+                          borderRadius: "8px",
+                          border: `1px solid ${colores.borde}`,
+                          background: "#0B1420",
+                          color: colores.texto,
+                        }}
+                      >
+                        <option value="">Elegir producto manualmente...</option>
+                        {catalogo.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.nombre}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {f.productoId && (
+                    <>
+                      <div style={{ display: "flex", gap: "16px", fontSize: "14px", color: colores.textoSecundario }}>
+                        <span>Detectado: <strong style={{ color: colores.texto }}>{f.cantidadDetectada}</strong></span>
+                        <span>Objetivo: <strong style={{ color: colores.texto }}>{f.objetivo}</strong></span>
+                        <span>Falta: <strong style={{ color: colores.dorado }}>{f.diferencia}</strong></span>
+                      </div>
+                      {f.openFraction > 0 && (
+                        <p style={{ color: colores.acento, fontSize: "12px", marginTop: "6px" }}>
+                          🍾 Se registrará una botella abierta en Barra ({Math.round(f.openFraction * 12)}/12)
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {error && <p style={{ color: "#F87171", marginBottom: "16px" }}>{error}</p>}
+
+            {guardado ? (
+              <p style={{ color: colores.acento, fontWeight: 700 }}>
+                ✓ Conteo guardado en {ubicaciones.find((u) => u.id === ubicacion)?.label}.
+              </p>
+            ) : (
+              <button
+                onClick={guardarConteo}
+                disabled={guardando}
+                style={{
+                  width: "100%",
+                  padding: "16px",
+                  borderRadius: "12px",
+                  border: "none",
+                  background: guardando ? colores.borde : colores.dorado,
+                  color: "#0B1420",
+                  fontWeight: 700,
+                  fontSize: "16px",
+                  cursor: guardando ? "default" : "pointer",
+                }}
+              >
+                {guardando ? "Guardando..." : "Guardar conteo"}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Paso 5: pedido separado por proveedor, listo para copiar a WhatsApp */}
+        {paso === "resumen" && pedidoPorProveedor && (
+          <div>
+            <p style={{ color: colores.textoSecundario, marginBottom: "16px" }}>
+              Pedido agrupado por el proveedor más barato registrado para cada producto.
+            </p>
+            <p style={{ color: colores.acento, fontSize: "13px", marginBottom: "16px" }}>
+              ✓ Ya quedó guardado como "Pendiente" en el Historial — puedes confirmarlo ahora
+              o más tarde, cuando llegue la compra.
+            </p>
+
+            {pedidoPorProveedor.grupos.length > 0 && (
+              <button
+                onClick={descargarPDF}
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  borderRadius: "10px",
+                  border: `1px solid ${colores.dorado}`,
+                  background: "none",
+                  color: colores.dorado,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  marginBottom: "20px",
+                }}
+              >
+                📄 Descargar PDF completo (para compras)
+              </button>
+            )}
+
+            {pedidoPorProveedor.grupos.length === 0 && (
+              <p style={{ color: colores.textoSecundario, marginBottom: "16px" }}>
+                No hay productos con proveedor y precio registrados para comprar.
+              </p>
+            )}
+
+            <div style={{ display: "grid", gap: "14px", marginBottom: "20px" }}>
+              {pedidoPorProveedor.grupos.map((grupo) => (
+                <div
+                  key={grupo.proveedorId}
                   style={{
                     background: colores.tarjeta,
                     border: `1px solid ${colores.borde}`,
@@ -681,43 +1066,90 @@ export default function Historial() {
                     padding: "16px",
                   }}
                 >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                    <span style={{ fontWeight: 700 }}>{grupo.proveedorNombre}</span>
+                    <span style={{ color: colores.dorado, fontWeight: 700 }}>
+                      ${Math.round(grupo.total).toLocaleString("es-CO")}
+                    </span>
+                  </div>
+                  <div style={{ display: "grid", gap: "4px", marginBottom: "12px" }}>
+                    {grupo.items.map((it, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", color: colores.textoSecundario }}>
+                        <span>{it.nombre} × {it.cantidad}</span>
+                        <span>${Math.round(it.total).toLocaleString("es-CO")}</span>
+                      </div>
+                    ))}
+                  </div>
                   <button
-                    onClick={() => setExpandido(abierto ? null : inv.id)}
-                    style={{ background: "none", border: "none", width: "100%", textAlign: "left", cursor: "pointer" }}
+                    onClick={() => copiarPedido(grupo)}
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      borderRadius: "10px",
+                      border: `1px solid ${colores.acento}`,
+                      background: copiado === grupo.proveedorId ? colores.acento : "none",
+                      color: copiado === grupo.proveedorId ? "#0B1420" : colores.acento,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
                   >
-                    <div style={{ fontWeight: 700 }}>
-                      {inv.fecha} · {inv.hora}
-                    </div>
-                    <div style={{ color: colores.textoSecundario, fontSize: "13px" }}>
-                      Nivel {inv.nivel} · {inv.ubicacion} · {(inv.items || []).length} productos
-                    </div>
+                    {copiado === grupo.proveedorId ? "✓ Copiado" : "Copiar para WhatsApp"}
                   </button>
-                  {abierto && (
-                    <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: `1px solid ${colores.borde}` }}>
-                      {(inv.items || []).map((it, i) => (
-                        <div
-                          key={i}
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            fontSize: "13px",
-                            color: colores.textoSecundario,
-                            padding: "4px 0",
-                          }}
-                        >
-                          <span>{it.rawName}</span>
-                          <span>{it.cantidadDetectada}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
-              );
-            })}
+              ))}
+            </div>
+
+            {pedidoPorProveedor.sinProveedor.length > 0 && (
+              <div
+                style={{
+                  background: colores.tarjeta,
+                  border: `1px solid ${colores.alerta}`,
+                  borderRadius: "14px",
+                  padding: "16px",
+                }}
+              >
+                <p style={{ color: colores.alerta, fontWeight: 700, fontSize: "13px", marginBottom: "8px" }}>
+                  Sin proveedor con precio registrado
+                </p>
+                {pedidoPorProveedor.sinProveedor.map((it, i) => (
+                  <div key={i} style={{ fontSize: "13px", color: colores.textoSecundario }}>
+                    {it.rawName} — faltan {it.diferencia}
+                  </div>
+                ))}
+                <p style={{ color: colores.textoSecundario, fontSize: "12px", marginTop: "8px" }}>
+                  Ve a Proveedores y registra un precio para poder incluirlos aquí.
+                </p>
+              </div>
+            )}
+
+            {pedidoPorProveedor.grupos.length > 0 && (
+              <div style={{ marginTop: "20px" }}>
+                <Link
+                  href="/pedidos-anteriores"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: "16px",
+                    borderRadius: "12px",
+                    border: "none",
+                    background: colores.dorado,
+                    color: "#0B1420",
+                    fontWeight: 700,
+                    fontSize: "16px",
+                    textAlign: "center",
+                    textDecoration: "none",
+                  }}
+                >
+                  Ver pedido en Historial →
+                </Link>
+                <p style={{ color: colores.textoSecundario, fontSize: "12px", marginTop: "8px", textAlign: "center" }}>
+                  Desde ahí lo confirmas como comprado cuando llegue la mercancía.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
     </main>
   );
 }
-
