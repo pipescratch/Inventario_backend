@@ -183,7 +183,7 @@ export default function Pedido() {
           (p) => normalizar(p.nombre) === nombreNormalizado
         );
         const objetivo = match ? match[objetivoCampo] || 0 : null;
-        const diferencia = match ? Math.max(0, objetivo - cantidadDetectada) : null;
+        const diferencia = match ? Math.round(Math.max(0, objetivo - cantidadDetectada) * 100) / 100 : null;
 
         return {
           rawName: it.rawName,
@@ -222,7 +222,7 @@ export default function Pedido() {
           productoId: producto.id,
           nombreProducto: producto.nombre,
           objetivo,
-          diferencia: Math.max(0, objetivo - fila.cantidadDetectada),
+          diferencia: Math.round(Math.max(0, objetivo - fila.cantidadDetectada) * 100) / 100,
         };
       })
     );
