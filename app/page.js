@@ -32,8 +32,8 @@ const acciones = [
 ];
 
 const accesosSecundarios = [
-  { href: "/pedidos-anteriores", label: "Pedidos anteriores" },
-  { href: "/productos", label: "Productos" },
+  { href: "/pedidos-anteriores", label: "Historial" },
+  { href: "/botellas-abiertas", label: "Botellas abiertas" },
   { href: "/proveedores", label: "Proveedores" },
 ];
 
