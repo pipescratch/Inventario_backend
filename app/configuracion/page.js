@@ -73,6 +73,8 @@ export default function Configuracion() {
   const [guardado, setGuardado] = useState(false);
   const [textoPegado, setTextoPegado] = useState("");
   const [mostrarPegar, setMostrarPegar] = useState(false);
+  const [pctMedio, setPctMedio] = useState(30);
+  const [pctAlto, setPctAlto] = useState(100);
 
   useEffect(() => {
     async function cargar() {
@@ -122,8 +124,8 @@ export default function Configuracion() {
         // Sigue siendo editable a mano después: solo se recalcula cuando cambia Normal.
         if (campo === "stockNormal") {
           const normal = Number(valor) || 0;
-          actualizada.stockMedio = Math.round(normal * 1.3);
-          actualizada.stockAlto = Math.round(normal * 1.5);
+          actualizada.stockMedio = Math.round(normal * (1 + pctMedio / 100));
+          actualizada.stockAlto = Math.round(normal * (1 + pctAlto / 100));
         }
         return actualizada;
       })
@@ -142,8 +144,8 @@ export default function Configuracion() {
         const normal = Number(f.stockNormal) || 0;
         return {
           ...f,
-          stockMedio: Math.round(normal * 1.3),
-          stockAlto: Math.round(normal * 1.5),
+          stockMedio: Math.round(normal * (1 + pctMedio / 100)),
+          stockAlto: Math.round(normal * (1 + pctAlto / 100)),
         };
       })
     );
@@ -424,6 +426,70 @@ export default function Configuracion() {
               </table>
             </div>
 
+            <div
+              style={{
+                display: "flex",
+                gap: "12px",
+                alignItems: "flex-end",
+                flexWrap: "wrap",
+                marginBottom: "16px",
+                background: colores.tarjeta,
+                border: `1px solid ${colores.borde}`,
+                borderRadius: "12px",
+                padding: "14px",
+              }}
+            >
+              <label style={{ fontSize: "13px", color: colores.textoSecundario }}>
+                % Medio sobre Normal
+                <input
+                  type="number"
+                  value={pctMedio}
+                  onChange={(e) => setPctMedio(Number(e.target.value) || 0)}
+                  style={{
+                    display: "block",
+                    width: "90px",
+                    marginTop: "4px",
+                    padding: "8px",
+                    borderRadius: "6px",
+                    border: `1px solid ${colores.borde}`,
+                    background: "#0B1420",
+                    color: colores.texto,
+                  }}
+                />
+              </label>
+              <label style={{ fontSize: "13px", color: colores.textoSecundario }}>
+                % Alto sobre Normal
+                <input
+                  type="number"
+                  value={pctAlto}
+                  onChange={(e) => setPctAlto(Number(e.target.value) || 0)}
+                  style={{
+                    display: "block",
+                    width: "90px",
+                    marginTop: "4px",
+                    padding: "8px",
+                    borderRadius: "6px",
+                    border: `1px solid ${colores.borde}`,
+                    background: "#0B1420",
+                    color: colores.texto,
+                  }}
+                />
+              </label>
+              <button
+                onClick={recalcularTodo}
+                style={{
+                  background: "none",
+                  border: `1px solid ${colores.acento}`,
+                  borderRadius: "10px",
+                  padding: "10px 16px",
+                  color: colores.acento,
+                  cursor: "pointer",
+                }}
+              >
+                ↻ Recalcular Medio/Alto con estos %
+              </button>
+            </div>
+
             <div style={{ display: "flex", gap: "10px", marginBottom: "24px", flexWrap: "wrap" }}>
               <button
                 onClick={agregarFila}
@@ -437,19 +503,6 @@ export default function Configuracion() {
                 }}
               >
                 + Agregar producto
-              </button>
-              <button
-                onClick={recalcularTodo}
-                style={{
-                  background: "none",
-                  border: `1px solid ${colores.acento}`,
-                  borderRadius: "10px",
-                  padding: "10px 16px",
-                  color: colores.acento,
-                  cursor: "pointer",
-                }}
-              >
-                ↻ Recalcular Medio/Alto (+30% / +50%)
               </button>
             </div>
 
