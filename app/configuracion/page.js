@@ -55,8 +55,8 @@ function parsearListaPegada(texto) {
         categoria,
         unidad: "unidad",
         stockNormal: normal,
-        stockMedio: normal,
-        stockAlto: normal,
+        stockMedio: Math.round(normal * 1.3),
+        stockAlto: Math.round(normal * 1.5),
         stockBar: 0,
         stockBodega: 0,
         estado: "Activo",
@@ -115,12 +115,38 @@ export default function Configuracion() {
 
   function actualizarFila(idLocalFila, campo, valor) {
     setFilas((prev) =>
-      prev.map((f) => (f.idLocal === idLocalFila ? { ...f, [campo]: valor } : f))
+      prev.map((f) => {
+        if (f.idLocal !== idLocalFila) return f;
+        const actualizada = { ...f, [campo]: valor };
+        // Al escribir Normal, recalcula Medio (+30%) y Alto (+50%) automáticamente.
+        // Sigue siendo editable a mano después: solo se recalcula cuando cambia Normal.
+        if (campo === "stockNormal") {
+          const normal = Number(valor) || 0;
+          actualizada.stockMedio = Math.round(normal * 1.3);
+          actualizada.stockAlto = Math.round(normal * 1.5);
+        }
+        return actualizada;
+      })
     );
   }
 
   function agregarFila() {
     setFilas((prev) => [...prev, filaVacia()]);
+  }
+
+  // Recalcula Medio (+30%) y Alto (+50%) para TODAS las filas ya cargadas,
+  // basándose en el valor actual de Normal de cada una.
+  function recalcularTodo() {
+    setFilas((prev) =>
+      prev.map((f) => {
+        const normal = Number(f.stockNormal) || 0;
+        return {
+          ...f,
+          stockMedio: Math.round(normal * 1.3),
+          stockAlto: Math.round(normal * 1.5),
+        };
+      })
+    );
   }
 
   function cargarListaPegada() {
@@ -398,20 +424,34 @@ export default function Configuracion() {
               </table>
             </div>
 
-            <button
-              onClick={agregarFila}
-              style={{
-                background: "none",
-                border: `1px dashed ${colores.borde}`,
-                borderRadius: "10px",
-                padding: "10px 16px",
-                color: colores.textoSecundario,
-                cursor: "pointer",
-                marginBottom: "24px",
-              }}
-            >
-              + Agregar producto
-            </button>
+            <div style={{ display: "flex", gap: "10px", marginBottom: "24px", flexWrap: "wrap" }}>
+              <button
+                onClick={agregarFila}
+                style={{
+                  background: "none",
+                  border: `1px dashed ${colores.borde}`,
+                  borderRadius: "10px",
+                  padding: "10px 16px",
+                  color: colores.textoSecundario,
+                  cursor: "pointer",
+                }}
+              >
+                + Agregar producto
+              </button>
+              <button
+                onClick={recalcularTodo}
+                style={{
+                  background: "none",
+                  border: `1px solid ${colores.acento}`,
+                  borderRadius: "10px",
+                  padding: "10px 16px",
+                  color: colores.acento,
+                  cursor: "pointer",
+                }}
+              >
+                ↻ Recalcular Medio/Alto (+30% / +50%)
+              </button>
+            </div>
 
             {error && <p style={{ color: "#F87171", marginBottom: "16px" }}>{error}</p>}
             {guardado && (
