@@ -17,6 +17,38 @@ function ubicacionDe(items) {
   return null;
 }
 
+function agruparPorProveedor(lineas) {
+  const grupos = {};
+  lineas.forEach((it) => {
+    const nombre = it.proveedor || "Sin proveedor";
+    if (!grupos[nombre]) grupos[nombre] = { proveedorNombre: nombre, items: [], total: 0 };
+    grupos[nombre].items.push(it);
+    grupos[nombre].total += Number(it.total) || 0;
+  });
+  return Object.values(grupos);
+}
+
+function textoWhatsApp(grupo) {
+  const lineas = grupo.items.map(
+    (it) => `• ${it.nombre} — ${it.cantidad} un. — $${Math.round(it.total).toLocaleString("es-CO")}`
+  );
+  return `Pedido para ${grupo.proveedorNombre}\n\n${lineas.join("\n")}\n\nTotal: $${Math.round(grupo.total).toLocaleString("es-CO")}`;
+}
+
+let cargandoJsPDF = null;
+function asegurarJsPDF() {
+  if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+  if (cargandoJsPDF) return cargandoJsPDF;
+  cargandoJsPDF = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    s.onload = () => (window.jspdf && window.jspdf.jsPDF) ? resolve(window.jspdf.jsPDF) : reject(new Error("jsPDF no cargó."));
+    s.onerror = () => reject(new Error("No se pudo cargar la librería de PDF."));
+    document.head.appendChild(s);
+  });
+  return cargandoJsPDF;
+}
+
 export default function Historial() {
   const [vista, setVista] = useState("pedidos"); // pedidos | inventarios
   const [pedidos, setPedidos] = useState([]);
@@ -29,6 +61,9 @@ export default function Historial() {
   const [lineasEdicion, setLineasEdicion] = useState([]);
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
   const [eliminandoId, setEliminandoId] = useState(null);
+  const [copiado, setCopiado] = useState(null);
+  const [recibiendoId, setRecibiendoId] = useState(null);
+  const [lineasRecepcion, setLineasRecepcion] = useState([]);
 
   useEffect(() => {
     cargar();
@@ -60,11 +95,27 @@ export default function Historial() {
   // Marca un pedido pendiente como comprado: suma lo pedido al stock del
   // producto (en la ubicación con la que se hizo ese pedido) y cambia el
   // estado del pedido a "confirmado".
-  async function marcarComoComprado(pedido) {
+  function empezarRecepcion(pedido) {
+    setRecibiendoId(pedido.id);
+    setLineasRecepcion(
+      lineasDe(pedido.items).map((l) => ({ ...l, recibido: l.recibido !== false, nota: l.nota || "" }))
+    );
+  }
+
+  function alternarRecibido(index) {
+    setLineasRecepcion((prev) =>
+      prev.map((l, i) => (i === index ? { ...l, recibido: !l.recibido } : l))
+    );
+  }
+
+  function actualizarNota(index, nota) {
+    setLineasRecepcion((prev) => prev.map((l, i) => (i === index ? { ...l, nota } : l)));
+  }
+
+  async function confirmarRecepcion(pedido) {
     setConfirmandoId(pedido.id);
     setError(null);
     try {
-      const lineas = lineasDe(pedido.items);
       const ubicacion = ubicacionDe(pedido.items) || "bar";
       const stockCampo = ubicacion === "bar" ? "stock_bar" : "stock_bodega";
 
@@ -76,8 +127,10 @@ export default function Historial() {
       }
       const catalogo = dataProd.productos;
 
-      const productosActualizados = lineas
-        .filter((it) => it.productoId)
+      // Solo se suma al stock lo que realmente llegó. Lo marcado como
+      // faltante queda anotado en el pedido, sin sumarse al inventario.
+      const productosActualizados = lineasRecepcion
+        .filter((it) => it.productoId && it.recibido)
         .map((it) => {
           const original = catalogo.find((p) => p.id === it.productoId);
           if (!original) return null;
@@ -108,12 +161,15 @@ export default function Historial() {
       await fetch("/api/tabla/pedidos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filas: [{ ...pedido, estado: "confirmado" }] }),
+        body: JSON.stringify({
+          filas: [{ ...pedido, estado: "confirmado", items: { ubicacion, lineas: lineasRecepcion } }],
+        }),
       });
 
+      setRecibiendoId(null);
       await cargar();
     } catch (err) {
-      setError("No se pudo confirmar la compra. " + err.message);
+      setError("No se pudo confirmar la recepción. " + err.message);
     } finally {
       setConfirmandoId(null);
     }
@@ -178,6 +234,84 @@ export default function Historial() {
       setError("No se pudo borrar. " + err.message);
     } finally {
       setEliminandoId(null);
+    }
+  }
+
+  async function copiarWhatsApp(grupo, pedidoId) {
+    try {
+      await navigator.clipboard.writeText(textoWhatsApp(grupo));
+      setCopiado(pedidoId + grupo.proveedorNombre);
+      setTimeout(() => setCopiado(null), 2000);
+    } catch {
+      setError("No se pudo copiar. Selecciona y copia el texto manualmente.");
+    }
+  }
+
+  async function descargarPDF(pedido) {
+    setError(null);
+    try {
+      const JsPDF = await asegurarJsPDF();
+      const doc = new JsPDF();
+      let y = 16;
+      doc.setFontSize(16);
+      doc.text("Pedido — La Azotea Ocean Bar", 14, y);
+      y += 7;
+      doc.setFontSize(10);
+      doc.setTextColor(90);
+      doc.text(`Pedido #${pedido.numero} · ${pedido.fecha} · ${pedido.hora} · Nivel ${pedido.nivel}`, 14, y);
+      doc.setTextColor(0);
+      y += 10;
+
+      const gruposPdf = agruparPorProveedor(lineasDe(pedido.items));
+      let totalGeneral = 0;
+
+      gruposPdf.forEach((grupo) => {
+        if (y > 265) {
+          doc.addPage();
+          y = 16;
+        }
+        doc.setFontSize(12);
+        doc.setFont(undefined, "bold");
+        doc.text(`Proveedor: ${grupo.proveedorNombre}`, 14, y);
+        doc.setFont(undefined, "normal");
+        y += 6;
+        doc.setFontSize(9);
+        doc.setTextColor(120);
+        doc.text("Producto", 14, y);
+        doc.text("Cant.", 130, y);
+        doc.text("Total", 170, y);
+        doc.setTextColor(0);
+        y += 5;
+        grupo.items.forEach((it) => {
+          if (y > 275) {
+            doc.addPage();
+            y = 16;
+          }
+          doc.setFontSize(9);
+          doc.text(String(it.nombre).slice(0, 55), 14, y);
+          doc.text(String(it.cantidad), 130, y);
+          doc.text(`$${Math.round(it.total).toLocaleString("es-CO")}`, 170, y);
+          y += 5;
+        });
+        doc.setFontSize(10);
+        doc.setFont(undefined, "bold");
+        doc.text(`Subtotal: $${Math.round(grupo.total).toLocaleString("es-CO")}`, 14, y + 3);
+        doc.setFont(undefined, "normal");
+        y += 12;
+        totalGeneral += grupo.total;
+      });
+
+      if (y > 270) {
+        doc.addPage();
+        y = 16;
+      }
+      doc.setFontSize(13);
+      doc.setFont(undefined, "bold");
+      doc.text(`TOTAL GENERAL: $${Math.round(totalGeneral).toLocaleString("es-CO")}`, 14, y + 6);
+
+      doc.save(`pedido-${pedido.numero}-${pedido.fecha}.pdf`);
+    } catch (err) {
+      setError("No se pudo generar el PDF. " + err.message);
     }
   }
 
@@ -300,20 +434,70 @@ export default function Historial() {
                     {abierto && editandoId !== p.id && (
                       <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: `1px solid ${colores.borde}` }}>
                         {lineas.map((it, i) => (
-                          <div
-                            key={i}
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              fontSize: "13px",
-                              color: colores.textoSecundario,
-                              padding: "4px 0",
-                            }}
-                          >
-                            <span>{it.nombre} × {it.cantidad} ({it.proveedor})</span>
-                            <span>${Math.round(it.total).toLocaleString("es-CO")}</span>
+                          <div key={i} style={{ padding: "4px 0" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                fontSize: "13px",
+                                color: it.recibido === false ? "#F87171" : colores.textoSecundario,
+                              }}
+                            >
+                              <span>
+                                {it.recibido === false && "⚠️ "}
+                                {it.nombre} × {it.cantidad} ({it.proveedor})
+                              </span>
+                              <span>${Math.round(it.total).toLocaleString("es-CO")}</span>
+                            </div>
+                            {it.recibido === false && it.nota && (
+                              <div style={{ fontSize: "11px", color: "#F87171", marginTop: "2px" }}>
+                                Faltante: {it.nota}
+                              </div>
+                            )}
                           </div>
                         ))}
+
+                        <button
+                          onClick={() => descargarPDF(p)}
+                          style={{
+                            width: "100%",
+                            marginTop: "12px",
+                            padding: "10px",
+                            borderRadius: "8px",
+                            border: `1px solid ${colores.dorado}`,
+                            background: "none",
+                            color: colores.dorado,
+                            fontWeight: 700,
+                            fontSize: "13px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          📄 Descargar PDF completo
+                        </button>
+
+                        <div style={{ display: "grid", gap: "6px", marginTop: "8px" }}>
+                          {agruparPorProveedor(lineas).map((grupo) => (
+                            <button
+                              key={grupo.proveedorNombre}
+                              onClick={() => copiarWhatsApp(grupo, p.id)}
+                              style={{
+                                width: "100%",
+                                padding: "10px",
+                                borderRadius: "8px",
+                                border: `1px solid ${colores.acento}`,
+                                background: copiado === p.id + grupo.proveedorNombre ? colores.acento : "none",
+                                color: copiado === p.id + grupo.proveedorNombre ? "#0B1420" : colores.acento,
+                                fontWeight: 700,
+                                fontSize: "13px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {copiado === p.id + grupo.proveedorNombre
+                                ? "✓ Copiado"
+                                : `WhatsApp — ${grupo.proveedorNombre}`}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
 
@@ -362,23 +546,86 @@ export default function Historial() {
                       </div>
                     )}
 
-                    {pendiente && editandoId !== p.id && (
+                    {recibiendoId === p.id && (
+                      <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: `1px solid ${colores.borde}` }}>
+                        <p style={{ color: colores.textoSecundario, fontSize: "13px", marginBottom: "10px" }}>
+                          Marca qué llegó realmente. Lo que no llegue no se suma al inventario.
+                        </p>
+                        {lineasRecepcion.map((it, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              background: it.recibido ? "transparent" : "rgba(248,113,113,0.08)",
+                              borderRadius: "8px",
+                              padding: "8px",
+                              marginBottom: "8px",
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                              <input
+                                type="checkbox"
+                                checked={it.recibido}
+                                onChange={() => alternarRecibido(i)}
+                                style={{ width: "18px", height: "18px" }}
+                              />
+                              <span style={{ flex: 1, fontSize: "13px" }}>
+                                {it.nombre} × {it.cantidad}
+                              </span>
+                              {!it.recibido && <span style={{ fontSize: "16px" }}>⚠️</span>}
+                            </div>
+                            {!it.recibido && (
+                              <input
+                                value={it.nota}
+                                onChange={(e) => actualizarNota(i, e.target.value)}
+                                placeholder="Nota: ¿por qué falta? (ej. agotado con el proveedor)"
+                                style={{
+                                  width: "100%",
+                                  marginTop: "6px",
+                                  padding: "8px",
+                                  borderRadius: "6px",
+                                  border: `1px solid ${colores.alerta}`,
+                                  background: "#0B1420",
+                                  color: colores.texto,
+                                  fontSize: "12px",
+                                }}
+                              />
+                            )}
+                          </div>
+                        ))}
+                        <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                          <button
+                            onClick={() => setRecibiendoId(null)}
+                            style={{ flex: 1, padding: "10px", borderRadius: "8px", border: `1px solid ${colores.borde}`, background: "none", color: colores.textoSecundario, cursor: "pointer" }}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={() => confirmarRecepcion(p)}
+                            disabled={confirmandoId === p.id}
+                            style={{ flex: 1, padding: "10px", borderRadius: "8px", border: "none", background: colores.dorado, color: "#0B1420", fontWeight: 700, cursor: "pointer" }}
+                          >
+                            {confirmandoId === p.id ? "Guardando..." : "✓ Confirmar recepción"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {pendiente && editandoId !== p.id && recibiendoId !== p.id && (
                       <div style={{ display: "flex", gap: "8px", marginTop: "12px", flexWrap: "wrap" }}>
                         <button
-                          onClick={() => marcarComoComprado(p)}
-                          disabled={confirmandoId === p.id}
+                          onClick={() => empezarRecepcion(p)}
                           style={{
                             flex: "1 1 140px",
                             padding: "12px",
                             borderRadius: "10px",
                             border: "none",
-                            background: confirmandoId === p.id ? colores.borde : colores.dorado,
+                            background: colores.dorado,
                             color: "#0B1420",
                             fontWeight: 700,
-                            cursor: confirmandoId === p.id ? "default" : "pointer",
+                            cursor: "pointer",
                           }}
                         >
-                          {confirmandoId === p.id ? "Confirmando..." : "✓ Comprado"}
+                          ✓ Comprado
                         </button>
                         <button
                           onClick={() => empezarEdicion(p)}
