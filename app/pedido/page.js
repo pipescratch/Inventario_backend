@@ -56,6 +56,20 @@ function normalizar(texto) {
     .trim();
 }
 
+function generarUUID() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+function nowTime() {
+  return new Date().toTimeString().slice(0, 5);
+}
+
 export default function Pedido() {
   const [paso, setPaso] = useState("config"); // config | fotos | revisar | comparar
   const [nivel, setNivel] = useState(null);
@@ -70,6 +84,9 @@ export default function Pedido() {
   const [guardado, setGuardado] = useState(false);
   const [pedidoPorProveedor, setPedidoPorProveedor] = useState(null);
   const [copiado, setCopiado] = useState(null);
+  const [historialId, setHistorialId] = useState(null);
+  const [confirmando, setConfirmando] = useState(false);
+  const [pedidoConfirmado, setPedidoConfirmado] = useState(false);
 
   async function manejarSeleccionFotos(e) {
     const archivos = Array.from(e.target.files || []);
@@ -244,6 +261,23 @@ export default function Pedido() {
         return;
       }
       setGuardado(true);
+
+      // Guarda una foto fija de este conteo en el historial, con su fecha.
+      const registroHistorial = {
+        id: generarUUID(),
+        fecha: today(),
+        hora: nowTime(),
+        nivel,
+        ubicacion,
+        items: comparacion,
+      };
+      await fetch("/api/tabla/historial_inventarios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filas: [registroHistorial] }),
+      });
+      setHistorialId(registroHistorial.id);
+
       await armarPedidoPorProveedor();
     } catch (err) {
       setError("No se pudo guardar. " + err.message);
@@ -289,6 +323,7 @@ export default function Pedido() {
           };
         }
         grupos[mejor.proveedor_id].items.push({
+          productoId: item.productoId,
           nombre: item.rawName,
           cantidad: item.diferencia,
           precio: mejor.precio,
@@ -314,6 +349,93 @@ export default function Pedido() {
     return `Pedido para ${grupo.proveedorNombre}\n\n${lineas.join("\n")}\n\nTotal: $${Math.round(grupo.total).toLocaleString("es-CO")}`;
   }
 
+  // Carga jsPDF desde cdnjs solo cuando hace falta, para no pesar la app
+  // el resto del tiempo. Reutiliza la carga si ya se hizo antes.
+  let cargandoJsPDF = null;
+  function asegurarJsPDF() {
+    if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+    if (cargandoJsPDF) return cargandoJsPDF;
+    cargandoJsPDF = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+      s.onload = () => (window.jspdf && window.jspdf.jsPDF) ? resolve(window.jspdf.jsPDF) : reject(new Error("jsPDF no cargó."));
+      s.onerror = () => reject(new Error("No se pudo cargar la librería de PDF."));
+      document.head.appendChild(s);
+    });
+    return cargandoJsPDF;
+  }
+
+  async function descargarPDF() {
+    setError(null);
+    try {
+      const JsPDF = await asegurarJsPDF();
+      const doc = new JsPDF();
+      let y = 16;
+      doc.setFontSize(16);
+      doc.text("Pedido — La Azotea Ocean Bar", 14, y);
+      y += 7;
+      doc.setFontSize(10);
+      doc.setTextColor(90);
+      doc.text(
+        `${today()} · ${nowTime()} · Nivel ${niveles.find((n) => n.id === nivel)?.label}`,
+        14,
+        y
+      );
+      doc.setTextColor(0);
+      y += 10;
+
+      let totalGeneral = 0;
+
+      pedidoPorProveedor.grupos.forEach((grupo) => {
+        if (y > 265) {
+          doc.addPage();
+          y = 16;
+        }
+        doc.setFontSize(12);
+        doc.setFont(undefined, "bold");
+        doc.text(`Proveedor: ${grupo.proveedorNombre}`, 14, y);
+        doc.setFont(undefined, "normal");
+        y += 6;
+        doc.setFontSize(9);
+        doc.setTextColor(120);
+        doc.text("Producto", 14, y);
+        doc.text("Cant.", 130, y);
+        doc.text("Total", 170, y);
+        doc.setTextColor(0);
+        y += 5;
+        grupo.items.forEach((it) => {
+          if (y > 275) {
+            doc.addPage();
+            y = 16;
+          }
+          doc.setFontSize(9);
+          doc.text(String(it.nombre).slice(0, 55), 14, y);
+          doc.text(String(it.cantidad), 130, y);
+          doc.text(`$${Math.round(it.total).toLocaleString("es-CO")}`, 170, y);
+          y += 5;
+        });
+        doc.setFontSize(10);
+        doc.setFont(undefined, "bold");
+        doc.text(`Subtotal: $${Math.round(grupo.total).toLocaleString("es-CO")}`, 14, y + 3);
+        doc.setFont(undefined, "normal");
+        y += 12;
+        totalGeneral += grupo.total;
+      });
+
+      if (y > 270) {
+        doc.addPage();
+        y = 16;
+      }
+      doc.setFontSize(13);
+      doc.setFont(undefined, "bold");
+      doc.text(`TOTAL GENERAL: $${Math.round(totalGeneral).toLocaleString("es-CO")}`, 14, y + 6);
+
+      doc.save(`pedido-${today()}.pdf`);
+    } catch (err) {
+      setError("No se pudo generar el PDF. " + err.message);
+    }
+  }
+
   async function copiarPedido(grupo) {
     const texto = textoWhatsApp(grupo);
     try {
@@ -322,6 +444,82 @@ export default function Pedido() {
       setTimeout(() => setCopiado(null), 2000);
     } catch {
       setError("No se pudo copiar. Selecciona y copia el texto manualmente.");
+    }
+  }
+
+  // Al confirmar el pedido: 1) lo guarda en el historial de pedidos con su
+  // fecha, y 2) actualiza el stock de cada producto comprado, sumando la
+  // cantidad pedida a lo que ya había — dejando el inventario "completo"
+  // (al nivel objetivo) y listo para trabajar hasta el próximo reporte.
+  async function confirmarPedido() {
+    setConfirmando(true);
+    setError(null);
+    try {
+      const todosLosItems = [
+        ...pedidoPorProveedor.grupos.flatMap((g) =>
+          g.items.map((it) => ({ ...it, proveedor: g.proveedorNombre }))
+        ),
+      ];
+      const costoTotal = pedidoPorProveedor.grupos.reduce((s, g) => s + g.total, 0);
+
+      const resPedidos = await fetch("/api/tabla/pedidos");
+      const dataPedidos = await resPedidos.json();
+      const numero = (dataPedidos.status === "ok" ? dataPedidos.filas.length : 0) + 1;
+
+      const nuevoPedido = {
+        id: generarUUID(),
+        numero,
+        fecha: today(),
+        hora: nowTime(),
+        nivel,
+        estado: "confirmado",
+        items: todosLosItems,
+        costo_total: costoTotal,
+        inventario_id: historialId,
+      };
+      await fetch("/api/tabla/pedidos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filas: [nuevoPedido] }),
+      });
+
+      // Actualiza el stock: suma lo comprado a lo que había, dejando el
+      // inventario completo hasta el siguiente reporte.
+      const stockCampo = ubicacion === "bar" ? "stock_bar" : "stock_bodega";
+      const productosActualizados = todosLosItems
+        .filter((it) => it.productoId)
+        .map((it) => {
+          const original = catalogo.find((p) => p.id === it.productoId);
+          if (!original) return null;
+          const stockActual = Number(original[stockCampo]) || 0;
+          return {
+            id: original.id,
+            nombre: original.nombre,
+            categoria: original.categoria,
+            unidad: original.unidad,
+            stockNormal: original.stock_normal,
+            stockMedio: original.stock_medio,
+            stockAlto: original.stock_alto,
+            stockBar: stockCampo === "stock_bar" ? stockActual + it.cantidad : original.stock_bar,
+            stockBodega: stockCampo === "stock_bodega" ? stockActual + it.cantidad : original.stock_bodega,
+            estado: original.estado,
+          };
+        })
+        .filter(Boolean);
+
+      if (productosActualizados.length > 0) {
+        await fetch("/api/productos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productos: productosActualizados }),
+        });
+      }
+
+      setPedidoConfirmado(true);
+    } catch (err) {
+      setError("No se pudo confirmar el pedido. " + err.message);
+    } finally {
+      setConfirmando(false);
     }
   }
 
@@ -732,6 +930,25 @@ export default function Pedido() {
               Pedido agrupado por el proveedor más barato registrado para cada producto.
             </p>
 
+            {pedidoPorProveedor.grupos.length > 0 && (
+              <button
+                onClick={descargarPDF}
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  borderRadius: "10px",
+                  border: `1px solid ${colores.dorado}`,
+                  background: "none",
+                  color: colores.dorado,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  marginBottom: "20px",
+                }}
+              >
+                📄 Descargar PDF completo (para compras)
+              </button>
+            )}
+
             {pedidoPorProveedor.grupos.length === 0 && (
               <p style={{ color: colores.textoSecundario, marginBottom: "16px" }}>
                 No hay productos con proveedor y precio registrados para comprar.
@@ -802,6 +1019,34 @@ export default function Pedido() {
                 <p style={{ color: colores.textoSecundario, fontSize: "12px", marginTop: "8px" }}>
                   Ve a Proveedores y registra un precio para poder incluirlos aquí.
                 </p>
+              </div>
+            )}
+
+            {pedidoPorProveedor.grupos.length > 0 && (
+              <div style={{ marginTop: "20px" }}>
+                {pedidoConfirmado ? (
+                  <p style={{ color: colores.acento, fontWeight: 700 }}>
+                    ✓ Pedido confirmado y guardado. El inventario quedó completo, listo para trabajar hasta el próximo reporte.
+                  </p>
+                ) : (
+                  <button
+                    onClick={confirmarPedido}
+                    disabled={confirmando}
+                    style={{
+                      width: "100%",
+                      padding: "16px",
+                      borderRadius: "12px",
+                      border: "none",
+                      background: confirmando ? colores.borde : colores.dorado,
+                      color: "#0B1420",
+                      fontWeight: 700,
+                      fontSize: "16px",
+                      cursor: confirmando ? "default" : "pointer",
+                    }}
+                  >
+                    {confirmando ? "Confirmando..." : "✓ Confirmar pedido (marca inventario como completo)"}
+                  </button>
+                )}
               </div>
             )}
           </div>
