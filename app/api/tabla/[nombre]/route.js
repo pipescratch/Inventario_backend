@@ -15,6 +15,8 @@ const TABLAS_PERMITIDAS = new Set([
   "configuracion",
   "botellas_trabajo",
   "precios_proveedor",
+  "historial_inventarios",
+  "pedidos",
 ]);
 
 export async function GET(request, { params }) {
@@ -53,6 +55,26 @@ export async function POST(request, { params }) {
   }
 }
 
+export async function DELETE(request, { params }) {
+  const { nombre } = params;
+  if (!TABLAS_PERMITIDAS.has(nombre)) {
+    return json({ status: "error", message: `Tabla no permitida: ${nombre}` }, 400);
+  }
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    if (!id) {
+      return json({ status: "error", message: "Falta el id a eliminar." }, 400);
+    }
+    const supabase = supabaseServidor();
+    const { error } = await supabase.from(nombre).delete().eq("id", id);
+    if (error) return json({ status: "error", message: error.message }, 500);
+    return json({ status: "ok" }, 200);
+  } catch (e) {
+    return json({ status: "error", message: e.message }, 500);
+  }
+}
+
 function json(body, status) {
   return new Response(JSON.stringify(body), {
     status,
@@ -65,7 +87,7 @@ export async function OPTIONS() {
     status: 204,
     headers: {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
     },
   });
