@@ -9,6 +9,21 @@ function idLocal() {
   return `local-${contadorLocal}`;
 }
 
+// Carga jsPDF desde cdnjs solo cuando hace falta.
+let cargandoJsPDF = null;
+function asegurarJsPDF() {
+  if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+  if (cargandoJsPDF) return cargandoJsPDF;
+  cargandoJsPDF = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    s.onload = () => (window.jspdf && window.jspdf.jsPDF) ? resolve(window.jspdf.jsPDF) : reject(new Error("jsPDF no cargó."));
+    s.onerror = () => reject(new Error("No se pudo cargar la librería de PDF."));
+    document.head.appendChild(s);
+  });
+  return cargandoJsPDF;
+}
+
 // Genera un UUID sin depender de crypto.randomUUID() (que requiere
 // navegadores/iOS recientes). Funciona en cualquier Safari.
 function generarUUID() {
@@ -138,6 +153,46 @@ export default function Configuracion() {
 
   // Recalcula Medio (+30%) y Alto (+50%) para TODAS las filas ya cargadas,
   // basándose en el valor actual de Normal de cada una.
+  async function descargarPDF() {
+    setError(null);
+    try {
+      const JsPDF = await asegurarJsPDF();
+      const doc = new JsPDF();
+      let y = 16;
+      doc.setFontSize(16);
+      doc.text("Catálogo de productos — La Azotea Ocean Bar", 14, y);
+      y += 10;
+      doc.setFontSize(9);
+      doc.setTextColor(120);
+      doc.text("Producto", 14, y);
+      doc.text("Categoría", 90, y);
+      doc.text("Normal", 130, y);
+      doc.text("Medio", 155, y);
+      doc.text("Alto", 178, y);
+      doc.setTextColor(0);
+      y += 5;
+
+      filas.forEach((f) => {
+        if (!f.nombre.trim()) return;
+        if (y > 280) {
+          doc.addPage();
+          y = 16;
+        }
+        doc.setFontSize(9);
+        doc.text(String(f.nombre).slice(0, 40), 14, y);
+        doc.text(String(f.categoria || ""), 90, y);
+        doc.text(String(f.stockNormal), 130, y);
+        doc.text(String(f.stockMedio), 155, y);
+        doc.text(String(f.stockAlto), 178, y);
+        y += 5;
+      });
+
+      doc.save("catalogo-productos.pdf");
+    } catch (err) {
+      setError("No se pudo generar el PDF. " + err.message);
+    }
+  }
+
   function recalcularTodo() {
     setFilas((prev) =>
       prev.map((f) => {
@@ -281,20 +336,34 @@ export default function Configuracion() {
           <p style={{ color: colores.textoSecundario }}>Cargando catálogo...</p>
         ) : (
           <>
-            <button
-              onClick={() => setMostrarPegar((v) => !v)}
-              style={{
-                background: "none",
-                border: `1px solid ${colores.acento}`,
-                borderRadius: "10px",
-                padding: "10px 16px",
-                color: colores.acento,
-                cursor: "pointer",
-                marginBottom: "16px",
-              }}
-            >
-              {mostrarPegar ? "Cerrar" : "📋 Pegar lista completa"}
-            </button>
+            <div style={{ display: "flex", gap: "10px", marginBottom: "16px", flexWrap: "wrap" }}>
+              <button
+                onClick={() => setMostrarPegar((v) => !v)}
+                style={{
+                  background: "none",
+                  border: `1px solid ${colores.acento}`,
+                  borderRadius: "10px",
+                  padding: "10px 16px",
+                  color: colores.acento,
+                  cursor: "pointer",
+                }}
+              >
+                {mostrarPegar ? "Cerrar" : "📋 Pegar lista completa"}
+              </button>
+              <button
+                onClick={descargarPDF}
+                style={{
+                  background: "none",
+                  border: `1px solid ${colores.dorado}`,
+                  borderRadius: "10px",
+                  padding: "10px 16px",
+                  color: colores.dorado,
+                  cursor: "pointer",
+                }}
+              >
+                📄 Descargar PDF del catálogo
+              </button>
+            </div>
 
             {mostrarPegar && (
               <div
