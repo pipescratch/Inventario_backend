@@ -288,11 +288,17 @@ export default function Pedido() {
           };
         });
 
-        await fetch("/api/tabla/botellas_trabajo", {
+        const resGuardarBot = await fetch("/api/tabla/botellas_trabajo", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ filas: botellasNuevas }),
         });
+        const dataGuardarBot = await resGuardarBot.json();
+        if (dataGuardarBot.status !== "ok") {
+          setError("No se pudo registrar la botella abierta: " + (dataGuardarBot.message || "error desconocido"));
+          setGuardando(false);
+          return;
+        }
       }
 
       const res = await fetch("/api/productos", {
