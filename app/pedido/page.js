@@ -173,7 +173,11 @@ export default function Pedido() {
       const stockCampo = ubicacion === "bar" ? "stock_bar" : "stock_bodega";
 
       const filas = items.map((it) => {
-        const cantidadDetectada = (it.closedUnits || 0) + (it.openFraction || 0);
+        const closedUnits = Number(it.closedUnits) || 0;
+        const openFraction = Number(it.openFraction) || 0;
+        // Para comparar contra el objetivo se sigue considerando lo abierto
+        // como parte del stock disponible (una botella abierta cuenta).
+        const cantidadDetectada = closedUnits + openFraction;
         const nombreNormalizado = normalizar(it.rawName);
         const match = data.productos.find(
           (p) => normalizar(p.nombre) === nombreNormalizado
@@ -183,6 +187,8 @@ export default function Pedido() {
 
         return {
           rawName: it.rawName,
+          closedUnits,
+          openFraction,
           cantidadDetectada,
           productoId: match ? match.id : null,
           nombreProducto: match ? match.nombre : null,
@@ -239,8 +245,10 @@ export default function Pedido() {
             stockNormal: original.stock_normal,
             stockMedio: original.stock_medio,
             stockAlto: original.stock_alto,
-            stockBar: stockCampo === "stock_bar" ? f.cantidadDetectada : original.stock_bar,
-            stockBodega: stockCampo === "stock_bodega" ? f.cantidadDetectada : original.stock_bodega,
+            // El stock cerrado solo cuenta botellas cerradas.
+            // La fracción abierta se registra aparte como botella de trabajo.
+            stockBar: stockCampo === "stock_bar" ? f.closedUnits : original.stock_bar,
+            stockBodega: stockCampo === "stock_bodega" ? f.closedUnits : original.stock_bodega,
             estado: original.estado,
           };
         });
@@ -248,6 +256,39 @@ export default function Pedido() {
       if (productosActualizados.length === 0) {
         setError("No hay productos identificados para guardar.");
         return;
+      }
+
+      // Cualquier producto detectado con fracción abierta (>0) pasa
+      // automáticamente a "Botellas abiertas" en Ver Inventario, con el
+      // gráfico de 12 medidas verde→rojo.
+      const conBotellaAbierta = comparacion.filter((f) => f.productoId && f.openFraction > 0);
+      if (conBotellaAbierta.length > 0) {
+        const resBot = await fetch("/api/tabla/botellas_trabajo");
+        const dataBot = await resBot.json();
+        const botellasExistentes = dataBot.status === "ok" ? dataBot.filas : [];
+
+        const botellasNuevas = conBotellaAbierta.map((f) => {
+          const existente = botellasExistentes.find(
+            (b) => b.producto_id === f.productoId && b.estacion_id === "barra" && b.estado === "activa"
+          );
+          const tragos = Math.round(f.openFraction * 12);
+          return {
+            id: existente ? existente.id : generarUUID(),
+            producto_id: f.productoId,
+            estacion_id: "barra",
+            tragos,
+            cantidad_inicial: existente ? existente.cantidad_inicial : 12,
+            fecha_apertura: existente ? existente.fecha_apertura : today(),
+            hora_apertura: existente ? existente.hora_apertura : nowTime(),
+            estado: "activa",
+          };
+        });
+
+        await fetch("/api/tabla/botellas_trabajo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filas: botellasNuevas }),
+        });
       }
 
       const res = await fetch("/api/productos", {
@@ -885,11 +926,18 @@ export default function Pedido() {
                   )}
 
                   {f.productoId && (
-                    <div style={{ display: "flex", gap: "16px", fontSize: "14px", color: colores.textoSecundario }}>
-                      <span>Detectado: <strong style={{ color: colores.texto }}>{f.cantidadDetectada}</strong></span>
-                      <span>Objetivo: <strong style={{ color: colores.texto }}>{f.objetivo}</strong></span>
-                      <span>Falta: <strong style={{ color: colores.dorado }}>{f.diferencia}</strong></span>
-                    </div>
+                    <>
+                      <div style={{ display: "flex", gap: "16px", fontSize: "14px", color: colores.textoSecundario }}>
+                        <span>Detectado: <strong style={{ color: colores.texto }}>{f.cantidadDetectada}</strong></span>
+                        <span>Objetivo: <strong style={{ color: colores.texto }}>{f.objetivo}</strong></span>
+                        <span>Falta: <strong style={{ color: colores.dorado }}>{f.diferencia}</strong></span>
+                      </div>
+                      {f.openFraction > 0 && (
+                        <p style={{ color: colores.acento, fontSize: "12px", marginTop: "6px" }}>
+                          🍾 Se registrará una botella abierta en Barra ({Math.round(f.openFraction * 12)}/12)
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               ))}
