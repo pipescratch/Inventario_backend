@@ -179,6 +179,10 @@ export default function Inventario() {
   }
 
   async function abrirBotella(producto) {
+    if ((Number(producto.stock_bar) || 0) <= 0) {
+      setError(`No hay botellas cerradas de "${producto.nombre}" en Barra para abrir.`);
+      return;
+    }
     const nueva = {
       id: generarUUID(),
       producto_id: producto.id,
@@ -194,6 +198,29 @@ export default function Inventario() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filas: [nueva] }),
+    });
+
+    // Al abrirla, esa botella deja de contar como stock cerrado en Barra:
+    // se descuenta de inmediato para que quede pendiente en el próximo pedido.
+    const productoActualizado = {
+      id: producto.id,
+      nombre: producto.nombre,
+      categoria: producto.categoria,
+      unidad: producto.unidad,
+      stockNormal: producto.stock_normal,
+      stockMedio: producto.stock_medio,
+      stockAlto: producto.stock_alto,
+      stockBar: (Number(producto.stock_bar) || 0) - 1,
+      stockBodega: producto.stock_bodega,
+      estado: producto.estado,
+    };
+    setProductos((prev) =>
+      prev.map((p) => (p.id === producto.id ? { ...p, stock_bar: productoActualizado.stockBar } : p))
+    );
+    await fetch("/api/productos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productos: [productoActualizado] }),
     });
   }
 
