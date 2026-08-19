@@ -178,51 +178,9 @@ export default function Inventario() {
     return botellas.filter((b) => b.producto_id === productoId && b.estado === "activa");
   }
 
-  async function abrirBotella(producto) {
-    if ((Number(producto.stock_bar) || 0) <= 0) {
-      setError(`No hay botellas cerradas de "${producto.nombre}" en Barra para abrir.`);
-      return;
-    }
-    const nueva = {
-      id: generarUUID(),
-      producto_id: producto.id,
-      estacion_id: ESTACION_FIJA,
-      tragos: TRAGOS_POR_BOTELLA,
-      cantidad_inicial: TRAGOS_POR_BOTELLA,
-      fecha_apertura: today(),
-      hora_apertura: nowTime(),
-      estado: "activa",
-    };
-    setBotellas((prev) => [...prev, nueva]);
-    await fetch("/api/tabla/botellas_trabajo", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filas: [nueva] }),
-    });
-
-    // Al abrirla, esa botella deja de contar como stock cerrado en Barra:
-    // se descuenta de inmediato para que quede pendiente en el próximo pedido.
-    const productoActualizado = {
-      id: producto.id,
-      nombre: producto.nombre,
-      categoria: producto.categoria,
-      unidad: producto.unidad,
-      stockNormal: producto.stock_normal,
-      stockMedio: producto.stock_medio,
-      stockAlto: producto.stock_alto,
-      stockBar: (Number(producto.stock_bar) || 0) - 1,
-      stockBodega: producto.stock_bodega,
-      estado: producto.estado,
-    };
-    setProductos((prev) =>
-      prev.map((p) => (p.id === producto.id ? { ...p, stock_bar: productoActualizado.stockBar } : p))
-    );
-    await fetch("/api/productos", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ productos: [productoActualizado] }),
-    });
-  }
+  // Las botellas abiertas se crean automáticamente al guardar un conteo
+  // con fracción abierta detectada (desde "Hacer pedido semanal"), no
+  // manualmente desde aquí.
 
   async function ajustarTragos(botella, delta) {
     const nuevoTragos = Math.max(0, Math.min(TRAGOS_POR_BOTELLA, botella.tragos + delta));
@@ -425,20 +383,6 @@ export default function Inventario() {
                           ))}
                         </div>
                       )}
-                      <button
-                        onClick={() => abrirBotella(p)}
-                        style={{
-                          background: "none",
-                          border: `1px dashed ${colores.borde}`,
-                          borderRadius: "8px",
-                          padding: "6px 12px",
-                          color: colores.acento,
-                          fontSize: "12px",
-                          cursor: "pointer",
-                        }}
-                      >
-                        + Abrir botella en Barra
-                      </button>
                     </div>
                   )}
                 </div>
