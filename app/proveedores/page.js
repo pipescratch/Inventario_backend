@@ -21,12 +21,21 @@ function proveedorVacio() {
   };
 }
 
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export default function Proveedores() {
   const [proveedores, setProveedores] = useState([]);
+  const [productos, setProductos] = useState([]);
+  const [precios, setPrecios] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [editando, setEditando] = useState(null);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState(null);
+  const [expandido, setExpandido] = useState(null);
+  const [nuevoProductoId, setNuevoProductoId] = useState("");
+  const [nuevoPrecio, setNuevoPrecio] = useState("");
 
   useEffect(() => {
     cargar();
@@ -36,18 +45,62 @@ export default function Proveedores() {
     setCargando(true);
     setError(null);
     try {
-      const res = await fetch("/api/tabla/proveedores");
-      const data = await res.json();
-      if (data.status !== "ok") {
-        setError(data.message || "No se pudo cargar los proveedores.");
+      const [resProv, resProd, resPrecios] = await Promise.all([
+        fetch("/api/tabla/proveedores"),
+        fetch("/api/productos"),
+        fetch("/api/tabla/precios_proveedor"),
+      ]);
+      const dataProv = await resProv.json();
+      const dataProd = await resProd.json();
+      const dataPrecios = await resPrecios.json();
+      if (dataProv.status !== "ok") {
+        setError(dataProv.message || "No se pudo cargar los proveedores.");
         return;
       }
-      setProveedores(data.filas);
+      setProveedores(dataProv.filas);
+      setProductos(dataProd.status === "ok" ? dataProd.productos : []);
+      setPrecios(dataPrecios.status === "ok" ? dataPrecios.filas : []);
     } catch (err) {
       setError("No se pudo conectar con el servidor. " + err.message);
     } finally {
       setCargando(false);
     }
+  }
+
+  function preciosDelProveedor(provId) {
+    const entries = precios.filter((p) => p.proveedor_id === provId);
+    const porProducto = {};
+    entries.forEach((e) => {
+      if (!porProducto[e.producto_id] || e.fecha >= porProducto[e.producto_id].fecha) {
+        porProducto[e.producto_id] = e;
+      }
+    });
+    return Object.values(porProducto)
+      .map((e) => ({
+        ...e,
+        productoNombre: productos.find((p) => p.id === e.producto_id)?.nombre || "Producto eliminado",
+      }))
+      .sort((a, b) => a.productoNombre.localeCompare(b.productoNombre));
+  }
+
+  async function agregarPrecio(provId, provNombre) {
+    if (!nuevoProductoId || !nuevoPrecio || Number(nuevoPrecio) <= 0) return;
+    const nuevo = {
+      id: generarUUID(),
+      producto_id: nuevoProductoId,
+      proveedor_id: provId,
+      proveedor_nombre: provNombre,
+      precio: Number(nuevoPrecio),
+      fecha: today(),
+    };
+    setPrecios((prev) => [...prev, nuevo]);
+    setNuevoProductoId("");
+    setNuevoPrecio("");
+    await fetch("/api/tabla/precios_proveedor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filas: [nuevo] }),
+    });
   }
 
   async function guardarProveedor() {
@@ -227,41 +280,106 @@ export default function Proveedores() {
           </p>
         ) : (
           <div style={{ display: "grid", gap: "10px" }}>
-            {proveedores.map((p) => (
-              <div
-                key={p.id}
-                style={{
-                  background: colores.tarjeta,
-                  border: `1px solid ${colores.borde}`,
-                  borderRadius: "14px",
-                  padding: "16px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 700 }}>{p.nombre}</div>
-                  <div style={{ color: colores.textoSecundario, fontSize: "13px" }}>
-                    {[p.telefono, p.contacto].filter(Boolean).join(" · ") || "Sin datos de contacto"}
-                  </div>
-                </div>
-                <button
-                  onClick={() => setEditando(p)}
+            {proveedores.map((p) => {
+              const abierto = expandido === p.id;
+              const preciosP = preciosDelProveedor(p.id);
+              return (
+                <div
+                  key={p.id}
                   style={{
-                    background: "none",
+                    background: colores.tarjeta,
                     border: `1px solid ${colores.borde}`,
-                    borderRadius: "8px",
-                    padding: "8px 12px",
-                    color: colores.acento,
-                    cursor: "pointer",
-                    fontSize: "13px",
+                    borderRadius: "14px",
+                    padding: "16px",
                   }}
                 >
-                  Editar
-                </button>
-              </div>
-            ))}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <button
+                      onClick={() => setExpandido(abierto ? null : p.id)}
+                      style={{ background: "none", border: "none", textAlign: "left", cursor: "pointer", flex: 1 }}
+                    >
+                      <div style={{ fontWeight: 700, color: colores.texto }}>{p.nombre}</div>
+                      <div style={{ color: colores.textoSecundario, fontSize: "13px" }}>
+                        {preciosP.length} producto{preciosP.length === 1 ? "" : "s"} con precio
+                        {p.telefono ? ` · ${p.telefono}` : ""}
+                      </div>
+                    </button>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button
+                        onClick={() => setExpandido(abierto ? null : p.id)}
+                        style={{ background: "none", border: `1px solid ${colores.borde}`, borderRadius: "8px", padding: "8px 12px", color: colores.acento, cursor: "pointer", fontSize: "13px" }}
+                      >
+                        {abierto ? "Cerrar" : "Precios"}
+                      </button>
+                      <button
+                        onClick={() => setEditando(p)}
+                        style={{ background: "none", border: `1px solid ${colores.borde}`, borderRadius: "8px", padding: "8px 12px", color: colores.textoSecundario, cursor: "pointer", fontSize: "13px" }}
+                      >
+                        Editar
+                      </button>
+                    </div>
+                  </div>
+
+                  {abierto && (
+                    <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: `1px solid ${colores.borde}` }}>
+                      {preciosP.length === 0 ? (
+                        <p style={{ color: "#5B7085", fontSize: "13px", marginBottom: "12px" }}>
+                          Sin productos con precio todavía.
+                        </p>
+                      ) : (
+                        <div style={{ display: "grid", gap: "6px", marginBottom: "12px" }}>
+                          {preciosP.map((pr) => (
+                            <div
+                              key={pr.producto_id}
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                fontSize: "13px",
+                                padding: "6px 0",
+                                borderBottom: `1px solid ${colores.borde}`,
+                              }}
+                            >
+                              <span>{pr.productoNombre}</span>
+                              <span style={{ color: colores.dorado, fontWeight: 700 }}>
+                                ${Math.round(pr.precio).toLocaleString("es-CO")}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                        <select
+                          value={nuevoProductoId}
+                          onChange={(e) => setNuevoProductoId(e.target.value)}
+                          style={{ flex: "1 1 160px", padding: "8px", borderRadius: "6px", border: `1px solid ${colores.borde}`, background: "#0B1420", color: colores.texto, fontSize: "13px" }}
+                        >
+                          <option value="">Producto...</option>
+                          {productos.map((prod) => (
+                            <option key={prod.id} value={prod.id}>
+                              {prod.nombre}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          placeholder="Precio"
+                          value={nuevoPrecio}
+                          onChange={(e) => setNuevoPrecio(e.target.value)}
+                          style={{ width: "100px", padding: "8px", borderRadius: "6px", border: `1px solid ${colores.borde}`, background: "#0B1420", color: colores.texto, fontSize: "13px" }}
+                        />
+                        <button
+                          onClick={() => agregarPrecio(p.id, p.nombre)}
+                          style={{ background: colores.dorado, border: "none", borderRadius: "6px", padding: "8px 14px", color: "#0B1420", fontWeight: 700, cursor: "pointer", fontSize: "13px" }}
+                        >
+                          + Agregar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
