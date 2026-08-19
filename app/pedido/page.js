@@ -184,7 +184,10 @@ export default function Pedido() {
           (p) => normalizar(p.nombre) === nombreNormalizado
         );
         const objetivo = match ? match[objetivoCampo] || 0 : null;
-        const diferencia = match ? Math.round(Math.max(0, objetivo - cantidadDetectada) * 100) / 100 : null;
+        // El pedido se calcula solo con botellas cerradas (enteras). Una
+        // botella abierta a la mitad no reduce lo que hay que comprar:
+        // esa fracción se registra aparte como botella de trabajo.
+        const diferencia = match ? Math.max(0, Math.ceil(objetivo - closedUnits)) : null;
 
         return {
           rawName: it.rawName,
@@ -223,7 +226,7 @@ export default function Pedido() {
           productoId: producto.id,
           nombreProducto: producto.nombre,
           objetivo,
-          diferencia: Math.round(Math.max(0, objetivo - fila.cantidadDetectada) * 100) / 100,
+          diferencia: Math.max(0, Math.ceil(objetivo - fila.closedUnits)),
         };
       })
     );
@@ -1121,29 +1124,27 @@ export default function Pedido() {
 
             {pedidoPorProveedor.grupos.length > 0 && (
               <div style={{ marginTop: "20px" }}>
-                {pedidoConfirmado ? (
-                  <p style={{ color: colores.acento, fontWeight: 700 }}>
-                    ✓ Pedido confirmado y guardado. El inventario quedó completo, listo para trabajar hasta el próximo reporte.
-                  </p>
-                ) : (
-                  <button
-                    onClick={confirmarPedido}
-                    disabled={confirmando}
-                    style={{
-                      width: "100%",
-                      padding: "16px",
-                      borderRadius: "12px",
-                      border: "none",
-                      background: confirmando ? colores.borde : colores.dorado,
-                      color: "#0B1420",
-                      fontWeight: 700,
-                      fontSize: "16px",
-                      cursor: confirmando ? "default" : "pointer",
-                    }}
-                  >
-                    {confirmando ? "Confirmando..." : "✓ Confirmar pedido (marca inventario como completo)"}
-                  </button>
-                )}
+                <Link
+                  href="/pedidos-anteriores"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: "16px",
+                    borderRadius: "12px",
+                    border: "none",
+                    background: colores.dorado,
+                    color: "#0B1420",
+                    fontWeight: 700,
+                    fontSize: "16px",
+                    textAlign: "center",
+                    textDecoration: "none",
+                  }}
+                >
+                  Ver pedido en Historial →
+                </Link>
+                <p style={{ color: colores.textoSecundario, fontSize: "12px", marginTop: "8px", textAlign: "center" }}>
+                  Desde ahí lo confirmas como comprado cuando llegue la mercancía.
+                </p>
               </div>
             )}
           </div>
