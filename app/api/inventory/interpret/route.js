@@ -62,13 +62,28 @@ export async function POST(request) {
 
     const instrucciones = `Estas imágenes/documentos son fotos o capturas de un conteo de inventario de bar, manuscrito o en planilla, y pueden ser varias partes de un MISMO inventario — trátalas como una sola sesión. ${contexto}
 
+IMPORTANTE — notación manuscrita que vas a encontrar con frecuencia:
+El personal del bar escribe las cantidades usando el formato "X+Y" o "X+0,YY", donde:
+- X es el número de botellas CERRADAS completas (puede venir solo, ej. "3", o con un símbolo de "vacío"/cero como "Ø" que significa 0).
+- El "+Y" o "+0,YY" que sigue (con coma o punto decimal) es la FRACCIÓN de una botella de trabajo ABIERTA, siempre entre 0 y 1.
+
+Ejemplos reales de esta notación y cómo interpretarlos:
+- "2+0,5" → closed_units: 2, open_fraction: 0.5
+- "1+0.12" → closed_units: 1, open_fraction: 0.12
+- "0,28" (sin número entero antes, empieza directo en el decimal) → closed_units: 0, open_fraction: 0.28
+- "Ø" o "0" solo (sin "+") → closed_units: 0, open_fraction: null (no hay botella abierta)
+- "3" solo (sin "+") → closed_units: 3, open_fraction: null
+- "2+Ø" o "2+0" → closed_units: 2, open_fraction: null (el "+0" indica que no hay fracción abierta, tacha o vacío)
+
+Presta especial atención a distinguir el número ANTES del "+" (cerradas, entero) del número DESPUÉS del "+" (fracción abierta, decimal entre 0 y 1). No los mezcles ni los sumes en un solo número.
+
 Para cada producto que identifiques, no conviertas cantidades como "2 + 0,5" a un solo decimal. Separa:
 - closed_units: número de botellas cerradas completas (ej. 2)
 - open_fraction: fracción de una botella de trabajo abierta, entre 0 y 1 (ej. 0,5). Usa null si no aplica.
 
 Si el mismo producto aparece en más de un archivo, suma closed_units entre archivos (no dupliques la línea).
 
-Incluye confidence (0 a 1) y needs_review (true si un humano debería revisar esa línea).
+Incluye confidence (0 a 1) y needs_review (true si un humano debería revisar esa línea, especialmente si la notación "+" es difícil de leer con certeza).
 
 Responde ÚNICAMENTE con un objeto JSON, sin texto adicional, sin markdown:
 {"items":[{"raw_name":"nombre tal como aparece","closed_units":numero_o_null,"open_fraction":numero_o_null,"confidence":numero,"needs_review":booleano}]}
