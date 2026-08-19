@@ -14,6 +14,7 @@ const TABLAS_PERMITIDAS = new Set([
   "aliases_producto",
   "configuracion",
   "botellas_trabajo",
+  "precios_proveedor",
 ]);
 
 export async function GET(request, { params }) {
