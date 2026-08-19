@@ -266,10 +266,6 @@ export default function Pedido() {
       // automáticamente a "Botellas abiertas" en Ver Inventario, con el
       // gráfico de 12 medidas verde→rojo.
       const conBotellaAbierta = comparacion.filter((f) => f.productoId && f.openFraction > 0);
-      // Diagnóstico temporal: confirma cuántas detecta el código en este momento.
-      window.alert(
-        `Diagnóstico: ${comparacion.length} productos comparados, ${conBotellaAbierta.length} con botella abierta detectada (productoId + openFraction > 0).`
-      );
       if (conBotellaAbierta.length > 0) {
         const resBot = await fetch("/api/tabla/botellas_trabajo");
         const dataBot = await resBot.json();
