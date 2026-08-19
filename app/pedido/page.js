@@ -68,6 +68,8 @@ export default function Pedido() {
   const [comparacion, setComparacion] = useState(null);
   const [guardando, setGuardando] = useState(false);
   const [guardado, setGuardado] = useState(false);
+  const [pedidoPorProveedor, setPedidoPorProveedor] = useState(null);
+  const [copiado, setCopiado] = useState(null);
 
   async function manejarSeleccionFotos(e) {
     const archivos = Array.from(e.target.files || []);
@@ -242,10 +244,84 @@ export default function Pedido() {
         return;
       }
       setGuardado(true);
+      await armarPedidoPorProveedor();
     } catch (err) {
       setError("No se pudo guardar. " + err.message);
     } finally {
       setGuardando(false);
+    }
+  }
+
+  // Cruza los productos a comprar (los que tienen diferencia > 0) contra
+  // los precios registrados por proveedor, y elige automáticamente el
+  // proveedor más barato para cada producto. Agrupa el resultado por
+  // proveedor para poder copiarlo como pedido en WhatsApp.
+  async function armarPedidoPorProveedor() {
+    try {
+      const res = await fetch("/api/tabla/precios_proveedor");
+      const data = await res.json();
+      const precios = data.status === "ok" ? data.filas : [];
+
+      const aComprar = comparacion.filter((f) => f.productoId && f.diferencia > 0);
+
+      const grupos = {}; // proveedorId -> { nombre, items: [], total }
+      const sinProveedor = [];
+
+      aComprar.forEach((item) => {
+        const opciones = precios
+          .filter((p) => p.producto_id === item.productoId)
+          .sort((a, b) => a.precio - b.precio);
+
+        if (opciones.length === 0) {
+          sinProveedor.push(item);
+          return;
+        }
+
+        const mejor = opciones[0];
+        const totalItem = mejor.precio * item.diferencia;
+
+        if (!grupos[mejor.proveedor_id]) {
+          grupos[mejor.proveedor_id] = {
+            proveedorId: mejor.proveedor_id,
+            proveedorNombre: mejor.proveedor_nombre,
+            items: [],
+            total: 0,
+          };
+        }
+        grupos[mejor.proveedor_id].items.push({
+          nombre: item.rawName,
+          cantidad: item.diferencia,
+          precio: mejor.precio,
+          total: totalItem,
+        });
+        grupos[mejor.proveedor_id].total += totalItem;
+      });
+
+      setPedidoPorProveedor({
+        grupos: Object.values(grupos).sort((a, b) => a.proveedorNombre.localeCompare(b.proveedorNombre)),
+        sinProveedor,
+      });
+      setPaso("resumen");
+    } catch (err) {
+      setError("No se pudo armar el pedido por proveedor. " + err.message);
+    }
+  }
+
+  function textoWhatsApp(grupo) {
+    const lineas = grupo.items.map(
+      (it) => `• ${it.nombre} — ${it.cantidad} un. — $${Math.round(it.total).toLocaleString("es-CO")}`
+    );
+    return `Pedido para ${grupo.proveedorNombre}\n\n${lineas.join("\n")}\n\nTotal: $${Math.round(grupo.total).toLocaleString("es-CO")}`;
+  }
+
+  async function copiarPedido(grupo) {
+    const texto = textoWhatsApp(grupo);
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopiado(grupo.proveedorId);
+      setTimeout(() => setCopiado(null), 2000);
+    } catch {
+      setError("No se pudo copiar. Selecciona y copia el texto manualmente.");
     }
   }
 
@@ -645,6 +721,88 @@ export default function Pedido() {
               >
                 {guardando ? "Guardando..." : "Guardar conteo"}
               </button>
+            )}
+          </div>
+        )}
+
+        {/* Paso 5: pedido separado por proveedor, listo para copiar a WhatsApp */}
+        {paso === "resumen" && pedidoPorProveedor && (
+          <div>
+            <p style={{ color: colores.textoSecundario, marginBottom: "16px" }}>
+              Pedido agrupado por el proveedor más barato registrado para cada producto.
+            </p>
+
+            {pedidoPorProveedor.grupos.length === 0 && (
+              <p style={{ color: colores.textoSecundario, marginBottom: "16px" }}>
+                No hay productos con proveedor y precio registrados para comprar.
+              </p>
+            )}
+
+            <div style={{ display: "grid", gap: "14px", marginBottom: "20px" }}>
+              {pedidoPorProveedor.grupos.map((grupo) => (
+                <div
+                  key={grupo.proveedorId}
+                  style={{
+                    background: colores.tarjeta,
+                    border: `1px solid ${colores.borde}`,
+                    borderRadius: "14px",
+                    padding: "16px",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                    <span style={{ fontWeight: 700 }}>{grupo.proveedorNombre}</span>
+                    <span style={{ color: colores.dorado, fontWeight: 700 }}>
+                      ${Math.round(grupo.total).toLocaleString("es-CO")}
+                    </span>
+                  </div>
+                  <div style={{ display: "grid", gap: "4px", marginBottom: "12px" }}>
+                    {grupo.items.map((it, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", color: colores.textoSecundario }}>
+                        <span>{it.nombre} × {it.cantidad}</span>
+                        <span>${Math.round(it.total).toLocaleString("es-CO")}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => copiarPedido(grupo)}
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      borderRadius: "10px",
+                      border: `1px solid ${colores.acento}`,
+                      background: copiado === grupo.proveedorId ? colores.acento : "none",
+                      color: copiado === grupo.proveedorId ? "#0B1420" : colores.acento,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {copiado === grupo.proveedorId ? "✓ Copiado" : "Copiar para WhatsApp"}
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {pedidoPorProveedor.sinProveedor.length > 0 && (
+              <div
+                style={{
+                  background: colores.tarjeta,
+                  border: `1px solid ${colores.alerta}`,
+                  borderRadius: "14px",
+                  padding: "16px",
+                }}
+              >
+                <p style={{ color: colores.alerta, fontWeight: 700, fontSize: "13px", marginBottom: "8px" }}>
+                  Sin proveedor con precio registrado
+                </p>
+                {pedidoPorProveedor.sinProveedor.map((it, i) => (
+                  <div key={i} style={{ fontSize: "13px", color: colores.textoSecundario }}>
+                    {it.rawName} — faltan {it.diferencia}
+                  </div>
+                ))}
+                <p style={{ color: colores.textoSecundario, fontSize: "12px", marginTop: "8px" }}>
+                  Ve a Proveedores y registra un precio para poder incluirlos aquí.
+                </p>
+              </div>
             )}
           </div>
         )}
