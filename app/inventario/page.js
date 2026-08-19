@@ -174,6 +174,43 @@ export default function Inventario() {
     }
   }
 
+  // Restablece el stock de Barra al valor base (nivel Normal) para todos
+  // los productos — deja el inventario como estaba el día que cargaste la
+  // base, para poder hacer una prueba limpia y comparable de un conteo nuevo.
+  async function restablecerABase() {
+    const confirmar = window.confirm(
+      "Esto va a reemplazar el stock actual de Barra de TODOS los productos por su valor base (Normal). ¿Continuar?"
+    );
+    if (!confirmar) return;
+
+    setCargando(true);
+    setError(null);
+    try {
+      const productosActualizados = productos.map((p) => ({
+        id: p.id,
+        nombre: p.nombre,
+        categoria: p.categoria,
+        unidad: p.unidad,
+        stockNormal: p.stock_normal,
+        stockMedio: p.stock_medio,
+        stockAlto: p.stock_alto,
+        stockBar: p.stock_normal,
+        stockBodega: 0,
+        estado: p.estado,
+      }));
+      await fetch("/api/productos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productos: productosActualizados }),
+      });
+      await cargar();
+    } catch (err) {
+      setError("No se pudo restablecer. " + err.message);
+    } finally {
+      setCargando(false);
+    }
+  }
+
   function botellasActivasDe(productoId) {
     return botellas.filter((b) => b.producto_id === productoId && b.estado === "activa");
   }
@@ -299,10 +336,27 @@ export default function Inventario() {
             color: colores.dorado,
             fontWeight: 700,
             cursor: "pointer",
-            marginBottom: "20px",
+            marginBottom: "10px",
           }}
         >
           📄 Descargar PDF del inventario
+        </button>
+
+        <button
+          onClick={restablecerABase}
+          style={{
+            width: "100%",
+            padding: "10px",
+            borderRadius: "10px",
+            border: "1px solid #F87171",
+            background: "none",
+            color: "#F87171",
+            fontWeight: 700,
+            cursor: "pointer",
+            marginBottom: "20px",
+          }}
+        >
+          ↺ Restablecer inventario a la base (Normal)
         </button>
 
         {error && <p style={{ color: "#F87171", marginBottom: "16px" }}>{error}</p>}
@@ -369,7 +423,7 @@ export default function Inventario() {
                               </button>
                               <button
                                 onClick={() => ajustarTragos(b, 1)}
-                                style={{ background: "none", border: `1px solid ${colores.borde}`, borderRadius: "6px", color: colores.texto, width: "26px", height: "26px", cursor: "pointer" }}
+                                style={{ background: "none", border: `1px solid ${colores.borde} `, borderRadius: "6px", color: colores.texto, width: "26px", height: "26px", cursor: "pointer" }}
                               >
                                 +
                               </button>
