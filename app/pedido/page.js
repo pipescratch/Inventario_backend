@@ -85,6 +85,7 @@ export default function Pedido() {
   const [pedidoPorProveedor, setPedidoPorProveedor] = useState(null);
   const [copiado, setCopiado] = useState(null);
   const [historialId, setHistorialId] = useState(null);
+  const [pedidoId, setPedidoId] = useState(null);
   const [confirmando, setConfirmando] = useState(false);
   const [pedidoConfirmado, setPedidoConfirmado] = useState(false);
 
@@ -373,10 +374,47 @@ export default function Pedido() {
         grupos[mejor.proveedor_id].total += totalItem;
       });
 
-      setPedidoPorProveedor({
+      const pedidoArmado = {
         grupos: Object.values(grupos).sort((a, b) => a.proveedorNombre.localeCompare(b.proveedorNombre)),
         sinProveedor,
-      });
+      };
+      setPedidoPorProveedor(pedidoArmado);
+
+      // Se guarda de inmediato como "pendiente", para que quede en el
+      // Historial aunque no se confirme la compra en este mismo momento.
+      const todosLosItems = pedidoArmado.grupos.flatMap((g) =>
+        g.items.map((it) => ({ ...it, proveedor: g.proveedorNombre }))
+      );
+      const costoTotal = pedidoArmado.grupos.reduce((s, g) => s + g.total, 0);
+
+      if (todosLosItems.length > 0) {
+        const resPedidos = await fetch("/api/tabla/pedidos");
+        const dataPedidos = await resPedidos.json();
+        const numero = (dataPedidos.status === "ok" ? dataPedidos.filas.length : 0) + 1;
+        const idNuevo = generarUUID();
+
+        await fetch("/api/tabla/pedidos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filas: [
+              {
+                id: idNuevo,
+                numero,
+                fecha: today(),
+                hora: nowTime(),
+                nivel,
+                estado: "pendiente",
+                items: { ubicacion, lineas: todosLosItems },
+                costo_total: costoTotal,
+                inventario_id: historialId,
+              },
+            ],
+          }),
+        });
+        setPedidoId(idNuevo);
+      }
+
       setPaso("resumen");
     } catch (err) {
       setError("No se pudo armar el pedido por proveedor. " + err.message);
@@ -503,25 +541,32 @@ export default function Pedido() {
       ];
       const costoTotal = pedidoPorProveedor.grupos.reduce((s, g) => s + g.total, 0);
 
+      // Actualiza el mismo registro que ya quedó guardado como "pendiente"
+      // al armar el pedido, marcándolo ahora como "confirmado".
       const resPedidos = await fetch("/api/tabla/pedidos");
       const dataPedidos = await resPedidos.json();
-      const numero = (dataPedidos.status === "ok" ? dataPedidos.filas.length : 0) + 1;
+      const numero = pedidoId && dataPedidos.status === "ok"
+        ? dataPedidos.filas.find((p) => p.id === pedidoId)?.numero
+        : (dataPedidos.status === "ok" ? dataPedidos.filas.length : 0) + 1;
 
-      const nuevoPedido = {
-        id: generarUUID(),
-        numero,
-        fecha: today(),
-        hora: nowTime(),
-        nivel,
-        estado: "confirmado",
-        items: todosLosItems,
-        costo_total: costoTotal,
-        inventario_id: historialId,
-      };
       await fetch("/api/tabla/pedidos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filas: [nuevoPedido] }),
+        body: JSON.stringify({
+          filas: [
+            {
+              id: pedidoId || generarUUID(),
+              numero,
+              fecha: today(),
+              hora: nowTime(),
+              nivel,
+              estado: "confirmado",
+              items: { ubicacion, lineas: todosLosItems },
+              costo_total: costoTotal,
+              inventario_id: historialId,
+            },
+          ],
+        }),
       });
 
       // Actualiza el stock: suma lo comprado a lo que había, dejando el
@@ -976,6 +1021,10 @@ export default function Pedido() {
           <div>
             <p style={{ color: colores.textoSecundario, marginBottom: "16px" }}>
               Pedido agrupado por el proveedor más barato registrado para cada producto.
+            </p>
+            <p style={{ color: colores.acento, fontSize: "13px", marginBottom: "16px" }}>
+              ✓ Ya quedó guardado como "Pendiente" en el Historial — puedes confirmarlo ahora
+              o más tarde, cuando llegue la compra.
             </p>
 
             {pedidoPorProveedor.grupos.length > 0 && (
