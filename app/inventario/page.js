@@ -353,11 +353,30 @@ export default function Inventario() {
             color: "#F87171",
             fontWeight: 700,
             cursor: "pointer",
-            marginBottom: "20px",
+            marginBottom: "10px",
           }}
         >
           ↺ Restablecer inventario a la base (Normal)
         </button>
+
+        <Link
+          href="/botellas-abiertas"
+          style={{
+            display: "block",
+            width: "100%",
+            padding: "10px",
+            borderRadius: "10px",
+            border: `1px solid ${colores.acento}`,
+            background: "none",
+            color: colores.acento,
+            fontWeight: 700,
+            textAlign: "center",
+            textDecoration: "none",
+            marginBottom: "20px",
+          }}
+        >
+          🍾 Ver todas las botellas abiertas
+        </Link>
 
         {error && <p style={{ color: "#F87171", marginBottom: "16px" }}>{error}</p>}
 
@@ -423,7 +442,7 @@ export default function Inventario() {
                               </button>
                               <button
                                 onClick={() => ajustarTragos(b, 1)}
-                                style={{ background: "none", border: `1px solid ${colores.borde} `, borderRadius: "6px", color: colores.texto, width: "26px", height: "26px", cursor: "pointer" }}
+                                style={{ background: "none", border: `1px solid ${colores.borde}`, borderRadius: "6px", color: colores.texto, width: "26px", height: "26px", cursor: "pointer" }}
                               >
                                 +
                               </button>
