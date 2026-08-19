@@ -76,6 +76,21 @@ function BarraAbierta({ tragos }) {
   );
 }
 
+// Carga jsPDF desde cdnjs solo cuando hace falta.
+let cargandoJsPDF = null;
+function asegurarJsPDF() {
+  if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+  if (cargandoJsPDF) return cargandoJsPDF;
+  cargandoJsPDF = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    s.onload = () => (window.jspdf && window.jspdf.jsPDF) ? resolve(window.jspdf.jsPDF) : reject(new Error("jsPDF no cargó."));
+    s.onerror = () => reject(new Error("No se pudo cargar la librería de PDF."));
+    document.head.appendChild(s);
+  });
+  return cargandoJsPDF;
+}
+
 export default function Inventario() {
   const [productos, setProductos] = useState([]);
   const [botellas, setBotellas] = useState([]);
@@ -83,6 +98,54 @@ export default function Inventario() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
   const [busqueda, setBusqueda] = useState("");
+
+  async function descargarPDF() {
+    setError(null);
+    try {
+      const JsPDF = await asegurarJsPDF();
+      const doc = new JsPDF();
+      let y = 16;
+      doc.setFontSize(16);
+      doc.text("Inventario — La Azotea Ocean Bar", 14, y);
+      y += 7;
+      doc.setFontSize(10);
+      doc.setTextColor(90);
+      doc.text(`${today()} · ${nowTime()} · Nivel ${nivel}`, 14, y);
+      doc.setTextColor(0);
+      y += 10;
+
+      doc.setFontSize(9);
+      doc.setTextColor(120);
+      doc.text("Producto", 14, y);
+      doc.text("Bar+Bodega", 110, y);
+      doc.text("Objetivo", 145, y);
+      doc.text("Estado", 175, y);
+      doc.setTextColor(0);
+      y += 5;
+
+      const filtrados = productos
+        .filter((p) => p.nombre.toLowerCase().includes(busqueda.toLowerCase()))
+        .sort((a, b) => (a.categoria || "").localeCompare(b.categoria || "") || a.nombre.localeCompare(b.nombre));
+
+      filtrados.forEach((p) => {
+        if (y > 280) {
+          doc.addPage();
+          y = 16;
+        }
+        const estado = calcularEstado(p, nivel);
+        doc.setFontSize(9);
+        doc.text(String(p.nombre).slice(0, 55), 14, y);
+        doc.text(String(closedStock(p)), 118, y);
+        doc.text(String(objetivo(p, nivel)), 150, y);
+        doc.text(ESTADO_ESTILO[estado].label, 175, y);
+        y += 5;
+      });
+
+      doc.save(`inventario-${today()}.pdf`);
+    } catch (err) {
+      setError("No se pudo generar el PDF. " + err.message);
+    }
+  }
 
   useEffect(() => {
     cargar();
@@ -236,9 +299,26 @@ export default function Inventario() {
             border: `1px solid ${colores.borde}`,
             background: colores.tarjeta,
             color: colores.texto,
-            marginBottom: "20px",
+            marginBottom: "12px",
           }}
         />
+
+        <button
+          onClick={descargarPDF}
+          style={{
+            width: "100%",
+            padding: "10px",
+            borderRadius: "10px",
+            border: `1px solid ${colores.dorado}`,
+            background: "none",
+            color: colores.dorado,
+            fontWeight: 700,
+            cursor: "pointer",
+            marginBottom: "20px",
+          }}
+        >
+          📄 Descargar PDF del inventario
+        </button>
 
         {error && <p style={{ color: "#F87171", marginBottom: "16px" }}>{error}</p>}
 
