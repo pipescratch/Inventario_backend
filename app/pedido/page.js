@@ -270,8 +270,11 @@ export default function Pedido() {
       //    la vieja como "terminada" y se crea una nueva con fecha de hoy.
       // 3) Si un producto que tenía botella activa ya NO aparece con
       //    fracción abierta en este conteo, se asume terminada y se cierra.
+      // La reconciliación de botellas abiertas solo aplica a conteos de
+      // Barra: un conteo de Bodega no vuelve a mirar las botellas abiertas,
+      // así que no debe interpretarse como que "se acabaron".
       const conBotellaAbierta = comparacion.filter((f) => f.productoId && f.openFraction > 0);
-      {
+      if (ubicacion === "bar") {
         const resBot = await fetch("/api/tabla/botellas_trabajo");
         const dataBot = await resBot.json();
         const botellasExistentes = dataBot.status === "ok" ? dataBot.filas : [];
