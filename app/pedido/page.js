@@ -74,6 +74,7 @@ export default function Pedido() {
   const [paso, setPaso] = useState("config"); // config | fotos | revisar | comparar
   const [nivel, setNivel] = useState(null);
   const [ubicacion, setUbicacion] = useState(null);
+  const [fechaConteo, setFechaConteo] = useState(today());
   const [fotos, setFotos] = useState([]); // { preview, blob }
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState(null);
@@ -294,7 +295,7 @@ export default function Pedido() {
               ...existente,
               estado: "terminada",
               cantidad_final: existente.tragos,
-              fecha_terminacion: today(),
+              fecha_terminacion: fechaConteo,
               hora_terminacion: nowTime(),
             });
             botellasAGuardar.push({
@@ -303,7 +304,7 @@ export default function Pedido() {
               estacion_id: "barra",
               tragos,
               cantidad_inicial: 12,
-              fecha_apertura: today(),
+              fecha_apertura: fechaConteo,
               hora_apertura: nowTime(),
               estado: "activa",
             });
@@ -314,7 +315,7 @@ export default function Pedido() {
               estacion_id: "barra",
               tragos,
               cantidad_inicial: existente ? existente.cantidad_inicial : 12,
-              fecha_apertura: existente ? existente.fecha_apertura : today(),
+              fecha_apertura: existente ? existente.fecha_apertura : fechaConteo,
               hora_apertura: existente ? existente.hora_apertura : nowTime(),
               estado: "activa",
             });
@@ -330,7 +331,7 @@ export default function Pedido() {
               ...b,
               estado: "terminada",
               cantidad_final: b.tragos,
-              fecha_terminacion: today(),
+              fecha_terminacion: fechaConteo,
               hora_terminacion: nowTime(),
             });
           });
@@ -365,7 +366,7 @@ export default function Pedido() {
       // Guarda una foto fija de este conteo en el historial, con su fecha.
       const registroHistorial = {
         id: generarUUID(),
-        fecha: today(),
+        fecha: fechaConteo,
         hora: nowTime(),
         nivel,
         ubicacion,
@@ -459,7 +460,7 @@ export default function Pedido() {
               {
                 id: idNuevo,
                 numero,
-                fecha: today(),
+                fecha: fechaConteo,
                 hora: nowTime(),
                 nivel,
                 estado: "pendiente",
@@ -514,7 +515,7 @@ export default function Pedido() {
       doc.setFontSize(10);
       doc.setTextColor(90);
       doc.text(
-        `${today()} · ${nowTime()} · Nivel ${niveles.find((n) => n.id === nivel)?.label}`,
+        `${fechaConteo} · ${nowTime()} · Nivel ${niveles.find((n) => n.id === nivel)?.label}`,
         14,
         y
       );
@@ -567,7 +568,7 @@ export default function Pedido() {
       doc.setFont(undefined, "bold");
       doc.text(`TOTAL GENERAL: $${Math.round(totalGeneral).toLocaleString("es-CO")}`, 14, y + 6);
 
-      doc.save(`pedido-${today()}.pdf`);
+      doc.save(`pedido-${fechaConteo}.pdf`);
     } catch (err) {
       setError("No se pudo generar el PDF. " + err.message);
     }
@@ -615,7 +616,7 @@ export default function Pedido() {
             {
               id: pedidoId || generarUUID(),
               numero,
-              fecha: today(),
+              fecha: fechaConteo,
               hora: nowTime(),
               nivel,
               estado: "confirmado",
@@ -756,6 +757,23 @@ export default function Pedido() {
                 </button>
               ))}
             </div>
+
+            <p style={{ fontWeight: 600, marginBottom: "12px" }}>Fecha del conteo</p>
+            <input
+              type="date"
+              value={fechaConteo}
+              onChange={(e) => setFechaConteo(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "14px",
+                borderRadius: "12px",
+                border: `1px solid ${colores.borde}`,
+                background: colores.tarjeta,
+                color: colores.texto,
+                fontSize: "16px",
+                marginBottom: "28px",
+              }}
+            />
 
             <button
               onClick={() => setPaso("fotos")}
