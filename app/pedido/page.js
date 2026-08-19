@@ -262,42 +262,88 @@ export default function Pedido() {
         return;
       }
 
-      // Cualquier producto detectado con fracción abierta (>0) pasa
-      // automáticamente a "Botellas abiertas" en Ver Inventario, con el
-      // gráfico de 12 medidas verde→rojo.
+      // Reconciliación de botellas abiertas contra el conteo nuevo:
+      // 1) Si el producto sigue con fracción abierta y bajó o se mantuvo
+      //    parecida, se actualiza la misma botella de trabajo.
+      // 2) Si la fracción SUBIÓ mucho (más de 2 tragos de diferencia), se
+      //    asume que la anterior se acabó y abrieron una nueva: se cierra
+      //    la vieja como "terminada" y se crea una nueva con fecha de hoy.
+      // 3) Si un producto que tenía botella activa ya NO aparece con
+      //    fracción abierta en este conteo, se asume terminada y se cierra.
       const conBotellaAbierta = comparacion.filter((f) => f.productoId && f.openFraction > 0);
-      if (conBotellaAbierta.length > 0) {
+      {
         const resBot = await fetch("/api/tabla/botellas_trabajo");
         const dataBot = await resBot.json();
         const botellasExistentes = dataBot.status === "ok" ? dataBot.filas : [];
+        const activasBarra = botellasExistentes.filter((b) => b.estacion_id === "barra" && b.estado === "activa");
 
-        const botellasNuevas = conBotellaAbierta.map((f) => {
-          const existente = botellasExistentes.find(
-            (b) => b.producto_id === f.productoId && b.estacion_id === "barra" && b.estado === "activa"
-          );
+        const productosConAbiertaHoy = new Set(conBotellaAbierta.map((f) => f.productoId));
+        const botellasAGuardar = [];
+
+        // Casos 1 y 2: productos que sí tienen fracción abierta en este conteo.
+        conBotellaAbierta.forEach((f) => {
+          const existente = activasBarra.find((b) => b.producto_id === f.productoId);
           const tragos = Math.round(f.openFraction * 12);
-          return {
-            id: existente ? existente.id : generarUUID(),
-            producto_id: f.productoId,
-            estacion_id: "barra",
-            tragos,
-            cantidad_inicial: existente ? existente.cantidad_inicial : 12,
-            fecha_apertura: existente ? existente.fecha_apertura : today(),
-            hora_apertura: existente ? existente.hora_apertura : nowTime(),
-            estado: "activa",
-          };
+
+          if (existente && tragos > existente.tragos + 2) {
+            // Subió mucho: la anterior se acabó, se abrió una nueva.
+            botellasAGuardar.push({
+              ...existente,
+              estado: "terminada",
+              cantidad_final: existente.tragos,
+              fecha_terminacion: today(),
+              hora_terminacion: nowTime(),
+            });
+            botellasAGuardar.push({
+              id: generarUUID(),
+              producto_id: f.productoId,
+              estacion_id: "barra",
+              tragos,
+              cantidad_inicial: 12,
+              fecha_apertura: today(),
+              hora_apertura: nowTime(),
+              estado: "activa",
+            });
+          } else {
+            botellasAGuardar.push({
+              id: existente ? existente.id : generarUUID(),
+              producto_id: f.productoId,
+              estacion_id: "barra",
+              tragos,
+              cantidad_inicial: existente ? existente.cantidad_inicial : 12,
+              fecha_apertura: existente ? existente.fecha_apertura : today(),
+              hora_apertura: existente ? existente.hora_apertura : nowTime(),
+              estado: "activa",
+            });
+          }
         });
 
-        const resGuardarBot = await fetch("/api/tabla/botellas_trabajo", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filas: botellasNuevas }),
-        });
-        const dataGuardarBot = await resGuardarBot.json();
-        if (dataGuardarBot.status !== "ok") {
-          setError("No se pudo registrar la botella abierta: " + (dataGuardarBot.message || "error desconocido"));
-          setGuardando(false);
-          return;
+        // Caso 3: botellas activas de antes cuyo producto ya no aparece
+        // con fracción abierta en este conteo nuevo → se cierran solas.
+        activasBarra
+          .filter((b) => !productosConAbiertaHoy.has(b.producto_id))
+          .forEach((b) => {
+            botellasAGuardar.push({
+              ...b,
+              estado: "terminada",
+              cantidad_final: b.tragos,
+              fecha_terminacion: today(),
+              hora_terminacion: nowTime(),
+            });
+          });
+
+        if (botellasAGuardar.length > 0) {
+          const resGuardarBot = await fetch("/api/tabla/botellas_trabajo", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filas: botellasAGuardar }),
+          });
+          const dataGuardarBot = await resGuardarBot.json();
+          if (dataGuardarBot.status !== "ok") {
+            setError("No se pudo registrar la botella abierta: " + (dataGuardarBot.message || "error desconocido"));
+            setGuardando(false);
+            return;
+          }
         }
       }
 
