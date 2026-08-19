@@ -179,7 +179,7 @@ export default function Inventario() {
   // base, para poder hacer una prueba limpia y comparable de un conteo nuevo.
   async function restablecerABase() {
     const confirmar = window.confirm(
-      "Esto va a reemplazar el stock actual de Barra de TODOS los productos por su valor base (Normal). ¿Continuar?"
+      "Esto va a reemplazar el stock actual de Barra de TODOS los productos por su valor base (Normal), y va a cerrar todas las botellas abiertas actuales. ¿Continuar?"
     );
     if (!confirmar) return;
 
@@ -203,6 +203,28 @@ export default function Inventario() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ productos: productosActualizados }),
       });
+
+      // Al volver a la base, cualquier botella abierta que hubiera queda
+      // fuera de contexto: se cierra para que no quede "abierta" de un
+      // período anterior.
+      const resBot = await fetch("/api/tabla/botellas_trabajo");
+      const dataBot = await resBot.json();
+      const activas = dataBot.status === "ok" ? dataBot.filas.filter((b) => b.estado === "activa") : [];
+      if (activas.length > 0) {
+        const cerradas = activas.map((b) => ({
+          ...b,
+          estado: "terminada",
+          cantidad_final: b.tragos,
+          fecha_terminacion: today(),
+          hora_terminacion: nowTime(),
+        }));
+        await fetch("/api/tabla/botellas_trabajo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filas: cerradas }),
+        });
+      }
+
       await cargar();
     } catch (err) {
       setError("No se pudo restablecer. " + err.message);
