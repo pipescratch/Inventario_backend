@@ -394,13 +394,18 @@ export default function Pedido() {
   // proveedor para poder copiarlo como pedido en WhatsApp.
   async function armarPedidoPorProveedor() {
     try {
-      const res = await fetch("/api/tabla/precios_proveedor");
+      const [res, resProv] = await Promise.all([
+        fetch("/api/tabla/precios_proveedor"),
+        fetch("/api/tabla/proveedores"),
+      ]);
       const data = await res.json();
+      const dataProv = await resProv.json();
       const precios = data.status === "ok" ? data.filas : [];
+      const proveedoresLista = dataProv.status === "ok" ? dataProv.filas : [];
 
       const aComprar = comparacion.filter((f) => f.productoId && f.diferencia > 0);
 
-      const grupos = {}; // proveedorId -> { nombre, items: [], total }
+      const grupos = {}; // proveedorId -> { nombre, items: [], total, telefono }
       const sinProveedor = [];
 
       aComprar.forEach((item) => {
@@ -417,9 +422,11 @@ export default function Pedido() {
         const totalItem = mejor.precio * item.diferencia;
 
         if (!grupos[mejor.proveedor_id]) {
+          const proveedorInfo = proveedoresLista.find((pv) => pv.id === mejor.proveedor_id);
           grupos[mejor.proveedor_id] = {
             proveedorId: mejor.proveedor_id,
             proveedorNombre: mejor.proveedor_nombre,
+            telefono: proveedorInfo ? proveedorInfo.telefono : null,
             items: [],
             total: 0,
           };
@@ -483,9 +490,28 @@ export default function Pedido() {
 
   function textoWhatsApp(grupo) {
     const lineas = grupo.items.map(
-      (it) => `• ${it.nombre} — ${it.cantidad} un. — $${Math.round(it.total).toLocaleString("es-CO")}`
+      (it, i) => `${i + 1}. ${it.nombre}\n   ${it.cantidad} un. × $${Math.round(it.precio).toLocaleString("es-CO")} = $${Math.round(it.total).toLocaleString("es-CO")}`
     );
-    return `Pedido para ${grupo.proveedorNombre}\n\n${lineas.join("\n")}\n\nTotal: $${Math.round(grupo.total).toLocaleString("es-CO")}`;
+    return (
+      `*PEDIDO — ${grupo.proveedorNombre}*\n` +
+      `_La Azotea Ocean Bar · ${fechaConteo}_\n` +
+      `${"—".repeat(28)}\n\n` +
+      `${lineas.join("\n\n")}\n\n` +
+      `${"—".repeat(28)}\n` +
+      `*TOTAL: $${Math.round(grupo.total).toLocaleString("es-CO")}*`
+    );
+  }
+
+  // Si tenemos el teléfono del proveedor guardado, abre WhatsApp directo con
+  // esa conversación. Si no, abre el buscador de contactos de WhatsApp con
+  // el mensaje ya listo, para elegir a quién mandárselo en el momento.
+  function enlaceWhatsApp(texto, telefono) {
+    const mensaje = encodeURIComponent(texto);
+    if (telefono) {
+      const soloNumeros = String(telefono).replace(/\D/g, "");
+      return `https://wa.me/${soloNumeros}?text=${mensaje}`;
+    }
+    return `https://api.whatsapp.com/send?text=${mensaje}`;
   }
 
   // Carga jsPDF desde cdnjs solo cuando hace falta, para no pesar la app
@@ -509,91 +535,134 @@ export default function Pedido() {
     try {
       const JsPDF = await asegurarJsPDF();
       const doc = new JsPDF();
-      let y = 16;
-      doc.setFontSize(16);
-      doc.text("Pedido — La Azotea Ocean Bar", 14, y);
-      y += 7;
-      doc.setFontSize(10);
-      doc.setTextColor(90);
+      const anchoPagina = doc.internal.pageSize.getWidth();
+      const margenIzq = 14;
+      const margenDer = anchoPagina - 14;
+      let y = 20;
+
+      // Encabezado
+      doc.setFontSize(18);
+      doc.setFont(undefined, "bold");
+      doc.setTextColor(20, 30, 40);
+      doc.text("La Azotea Ocean Bar", margenIzq, y);
+      y += 6;
+      doc.setFontSize(11);
+      doc.setFont(undefined, "normal");
+      doc.setTextColor(120);
       doc.text(
-        `${fechaConteo} · ${nowTime()} · Nivel ${niveles.find((n) => n.id === nivel)?.label}`,
-        14,
+        `Pedido semanal · ${fechaConteo} · Nivel ${niveles.find((n) => n.id === nivel)?.label}`,
+        margenIzq,
         y
       );
-      doc.setTextColor(0);
+      doc.setDrawColor(227, 176, 74); // dorado
+      doc.setLineWidth(0.8);
+      y += 4;
+      doc.line(margenIzq, y, margenDer, y);
       y += 10;
 
       let totalGeneral = 0;
+      const anchoNombre = margenDer - margenIzq - 60;
 
       pedidoPorProveedor.grupos.forEach((grupo) => {
-        if (y > 265) {
+        if (y > 250) {
           doc.addPage();
-          y = 16;
+          y = 20;
         }
+        const filaAltura = 6;
+        const alturaCaja = 14 + grupo.items.length * filaAltura + 10;
+
+        // Caja del proveedor con fondo suave
+        doc.setFillColor(245, 247, 249);
+        doc.setDrawColor(220, 225, 230);
+        doc.roundedRect(margenIzq, y, margenDer - margenIzq, alturaCaja, 2, 2, "FD");
+
+        let yCaja = y + 8;
         doc.setFontSize(12);
         doc.setFont(undefined, "bold");
-        doc.text(`Proveedor: ${grupo.proveedorNombre}`, 14, y);
+        doc.setTextColor(30, 40, 50);
+        doc.text(grupo.proveedorNombre, margenIzq + 4, yCaja);
+        yCaja += 6;
+
+        doc.setFontSize(8);
+        doc.setFont(undefined, "bold");
+        doc.setTextColor(140);
+        doc.text("PRODUCTO", margenIzq + 4, yCaja);
+        doc.text("CANT.", margenIzq + 4 + anchoNombre, yCaja, { align: "right" });
+        doc.text("PRECIO", margenIzq + 4 + anchoNombre + 25, yCaja, { align: "right" });
+        doc.text("TOTAL", margenDer - 4, yCaja, { align: "right" });
+        yCaja += 3;
+        doc.setDrawColor(220, 225, 230);
+        doc.setLineWidth(0.3);
+        doc.line(margenIzq + 4, yCaja, margenDer - 4, yCaja);
+        yCaja += 4;
+
         doc.setFont(undefined, "normal");
-        y += 6;
-        doc.setFontSize(9);
-        doc.setTextColor(120);
-        doc.text("Producto", 14, y);
-        doc.text("Cant.", 130, y);
-        doc.text("Total", 170, y);
-        doc.setTextColor(0);
-        y += 5;
         grupo.items.forEach((it) => {
-          if (y > 275) {
-            doc.addPage();
-            y = 16;
-          }
           doc.setFontSize(9);
-          doc.text(String(it.nombre).slice(0, 55), 14, y);
-          doc.text(String(it.cantidad), 130, y);
-          doc.text(`$${Math.round(it.total).toLocaleString("es-CO")}`, 170, y);
-          y += 5;
+          doc.setTextColor(30);
+          doc.text(String(it.nombre).slice(0, 42), margenIzq + 4, yCaja);
+          doc.text(String(it.cantidad), margenIzq + 4 + anchoNombre, yCaja, { align: "right" });
+          doc.text(`$${Math.round(it.precio).toLocaleString("es-CO")}`, margenIzq + 4 + anchoNombre + 25, yCaja, { align: "right" });
+          doc.text(`$${Math.round(it.total).toLocaleString("es-CO")}`, margenDer - 4, yCaja, { align: "right" });
+          yCaja += filaAltura;
         });
+
+        yCaja += 1;
+        doc.setDrawColor(220, 225, 230);
+        doc.line(margenIzq + 4, yCaja, margenDer - 4, yCaja);
+        yCaja += 6;
         doc.setFontSize(10);
         doc.setFont(undefined, "bold");
-        doc.text(`Subtotal: $${Math.round(grupo.total).toLocaleString("es-CO")}`, 14, y + 3);
-        doc.setFont(undefined, "normal");
-        y += 12;
+        doc.setTextColor(20, 30, 40);
+        doc.text(`Subtotal: $${Math.round(grupo.total).toLocaleString("es-CO")}`, margenDer - 4, yCaja, { align: "right" });
+
+        y += alturaCaja + 8;
         totalGeneral += grupo.total;
       });
 
-      if (y > 270) {
+      if (y > 265) {
         doc.addPage();
-        y = 16;
+        y = 20;
       }
-      doc.setFontSize(13);
+      doc.setDrawColor(227, 176, 74);
+      doc.setLineWidth(0.8);
+      doc.line(margenIzq, y, margenDer, y);
+      y += 8;
+      doc.setFontSize(14);
       doc.setFont(undefined, "bold");
-      doc.text(`TOTAL GENERAL: $${Math.round(totalGeneral).toLocaleString("es-CO")}`, 14, y + 6);
-      y += 16;
+      doc.setTextColor(20, 30, 40);
+      doc.text(`TOTAL GENERAL: $${Math.round(totalGeneral).toLocaleString("es-CO")}`, margenDer, y, { align: "right" });
+      y += 14;
 
       if (pedidoPorProveedor.sinProveedor.length > 0) {
-        if (y > 260) {
+        if (y > 250) {
           doc.addPage();
-          y = 16;
+          y = 20;
         }
-        doc.setFontSize(12);
+        const alturaCaja = 12 + pedidoPorProveedor.sinProveedor.length * 5.5;
+        doc.setFillColor(255, 246, 230);
+        doc.setDrawColor(227, 176, 74);
+        doc.roundedRect(margenIzq, y, margenDer - margenIzq, alturaCaja, 2, 2, "FD");
+        let yCaja = y + 8;
+        doc.setFontSize(11);
         doc.setFont(undefined, "bold");
-        doc.setTextColor(200, 100, 0);
-        doc.text("Sin proveedor asignado (falta registrar precio):", 14, y);
+        doc.setTextColor(180, 95, 0);
+        doc.text("Sin proveedor asignado (falta registrar precio)", margenIzq + 4, yCaja);
+        yCaja += 6;
         doc.setFont(undefined, "normal");
-        doc.setTextColor(0);
-        y += 7;
+        doc.setFontSize(9);
+        doc.setTextColor(90, 60, 20);
         pedidoPorProveedor.sinProveedor.forEach((it) => {
-          if (y > 280) {
-            doc.addPage();
-            y = 16;
-          }
-          doc.setFontSize(9);
-          doc.text(`${String(it.rawName).slice(0, 55)} — faltan ${it.diferencia}`, 14, y);
-          y += 5;
+          doc.text(`• ${String(it.rawName).slice(0, 55)} — faltan ${it.diferencia}`, margenIzq + 4, yCaja);
+          yCaja += 5.5;
         });
       }
 
-      doc.save(`pedido-${fechaConteo}.pdf`);
+      // Se abre en una pestaña nueva en vez de forzar la descarga directa,
+      // para que el visor de PDF del teléfono muestre sus propios botones
+      // de compartir, imprimir o cerrar (el ícono de compartir de Safari).
+      const blobUrl = doc.output("bloburl");
+      window.open(blobUrl, "_blank");
     } catch (err) {
       setError("No se pudo generar el PDF. " + err.message);
     }
@@ -601,9 +670,15 @@ export default function Pedido() {
 
   function textoWhatsAppSinProveedor() {
     const lineas = pedidoPorProveedor.sinProveedor.map(
-      (it) => `• ${it.rawName} — faltan ${it.diferencia}`
+      (it, i) => `${i + 1}. ${it.rawName} — faltan ${it.diferencia}`
     );
-    return `Productos a pedir sin proveedor asignado (falta registrar precio):\n\n${lineas.join("\n")}`;
+    return (
+      `*Productos a pedir — sin proveedor asignado*\n` +
+      `_La Azotea Ocean Bar · ${fechaConteo}_\n` +
+      `${"—".repeat(28)}\n\n` +
+      `${lineas.join("\n")}\n\n` +
+      `_Precio pendiente de confirmar con el proveedor._`
+    );
   }
 
   async function copiarSinProveedor() {
@@ -1195,21 +1270,45 @@ export default function Pedido() {
                       </div>
                     ))}
                   </div>
-                  <button
-                    onClick={() => copiarPedido(grupo)}
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      borderRadius: "10px",
-                      border: `1px solid ${colores.acento}`,
-                      background: copiado === grupo.proveedorId ? colores.acento : "none",
-                      color: copiado === grupo.proveedorId ? "#0B1420" : colores.acento,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {copiado === grupo.proveedorId ? "✓ Copiado" : "Copiar para WhatsApp"}
-                  </button>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      onClick={() => copiarPedido(grupo)}
+                      style={{
+                        flex: 1,
+                        padding: "10px",
+                        borderRadius: "10px",
+                        border: `1px solid ${colores.acento}`,
+                        background: copiado === grupo.proveedorId ? colores.acento : "none",
+                        color: copiado === grupo.proveedorId ? "#0B1420" : colores.acento,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        fontSize: "13px",
+                      }}
+                    >
+                      {copiado === grupo.proveedorId ? "✓ Copiado" : "Copiar"}
+                    </button>
+                    <a
+                      href={enlaceWhatsApp(textoWhatsApp(grupo), grupo.telefono)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        flex: 1,
+                        padding: "10px",
+                        borderRadius: "10px",
+                        border: "none",
+                        background: "#25D366",
+                        color: "#0B1420",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        textAlign: "center",
+                        textDecoration: "none",
+                        display: "block",
+                      }}
+                    >
+                      📱 {grupo.telefono ? "Enviar a " + grupo.proveedorNombre : "Enviar por WhatsApp"}
+                    </a>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1237,21 +1336,45 @@ export default function Pedido() {
                   por WhatsApp. Luego ve a Proveedores y registra su precio para que la
                   próxima vez se agrupen solos.
                 </p>
-                <button
-                  onClick={copiarSinProveedor}
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    borderRadius: "10px",
-                    border: `1px solid ${colores.alerta}`,
-                    background: copiadoSinProveedor ? colores.alerta : "none",
-                    color: copiadoSinProveedor ? "#0B1420" : colores.alerta,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                >
-                  {copiadoSinProveedor ? "✓ Copiado" : "Copiar para WhatsApp"}
-                </button>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button
+                    onClick={copiarSinProveedor}
+                    style={{
+                      flex: 1,
+                      padding: "10px",
+                      borderRadius: "10px",
+                      border: `1px solid ${colores.alerta}`,
+                      background: copiadoSinProveedor ? colores.alerta : "none",
+                      color: copiadoSinProveedor ? "#0B1420" : colores.alerta,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      fontSize: "13px",
+                    }}
+                  >
+                    {copiadoSinProveedor ? "✓ Copiado" : "Copiar"}
+                  </button>
+                  <a
+                    href={enlaceWhatsApp(textoWhatsAppSinProveedor(), null)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      flex: 1,
+                      padding: "10px",
+                      borderRadius: "10px",
+                      border: "none",
+                      background: "#25D366",
+                      color: "#0B1420",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      fontSize: "13px",
+                      textAlign: "center",
+                      textDecoration: "none",
+                      display: "block",
+                    }}
+                  >
+                    📱 Enviar por WhatsApp
+                  </a>
+                </div>
               </div>
             )}
 
