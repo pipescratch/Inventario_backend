@@ -113,33 +113,50 @@ export default function Home() {
     >
       <div style={{ maxWidth: "720px", margin: "0 auto", padding: "40px 20px 56px" }}>
         {/* Encabezado */}
-        <header style={{ marginBottom: "28px" }}>
-          <p
+        <header style={{ marginBottom: "28px", textAlign: "center" }}>
+          <div
             style={{
-              color: colores.acento,
-              fontWeight: 600,
-              fontSize: "13px",
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              marginBottom: "6px",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "#F2EFE9",
+              borderRadius: "18px",
+              padding: "16px 28px",
+              marginBottom: "16px",
             }}
           >
-            La Azotea Ocean Bar
-          </p>
+            <img
+              src="/logo_azt.png"
+              alt="La Azotea Ocean Bar"
+              style={{ height: "56px", width: "auto", display: "block" }}
+            />
+          </div>
           <h1
             style={{
               fontFamily: display.style.fontFamily,
               color: colores.texto,
               fontWeight: 700,
-              fontSize: "32px",
+              fontSize: "28px",
               margin: 0,
             }}
           >
             Inventario
           </h1>
+          <p
+            style={{
+              color: colores.acento,
+              fontWeight: 600,
+              fontSize: "12px",
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              margin: "6px 0 0",
+            }}
+          >
+            La Azotea Ocean Bar
+          </p>
 
           {/* Línea ondulada dorada, firma de la marca */}
-          <svg width="120" height="10" viewBox="0 0 120 10" style={{ marginTop: "14px" }} aria-hidden="true">
+          <svg width="120" height="10" viewBox="0 0 120 10" style={{ marginTop: "16px", display: "inline-block" }} aria-hidden="true">
             <path
               d="M0 5 Q 10 0, 20 5 T 40 5 T 60 5 T 80 5 T 100 5 T 120 5"
               fill="none"
