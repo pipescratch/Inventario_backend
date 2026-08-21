@@ -324,7 +324,10 @@ export default function Historial() {
       doc.setFont(undefined, "bold");
       doc.text(`TOTAL GENERAL: $${Math.round(totalGeneral).toLocaleString("es-CO")}`, 14, y + 6);
 
-      doc.save(`pedido-${pedido.numero}-${pedido.fecha}.pdf`);
+      // Se abre en una pestaña nueva en vez de forzar la descarga directa,
+      // para tener los botones de compartir/imprimir/cerrar del visor.
+      const blobUrl = doc.output("bloburl");
+      window.open(blobUrl, "_blank");
     } catch (err) {
       setError("No se pudo generar el PDF. " + err.message);
     }
