@@ -36,6 +36,8 @@ export default function Proveedores() {
   const [expandido, setExpandido] = useState(null);
   const [nuevoProductoId, setNuevoProductoId] = useState("");
   const [nuevoPrecio, setNuevoPrecio] = useState("");
+  const [editandoPrecioId, setEditandoPrecioId] = useState(null);
+  const [precioEditado, setPrecioEditado] = useState("");
 
   useEffect(() => {
     cargar();
@@ -100,6 +102,23 @@ export default function Proveedores() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filas: [nuevo] }),
+    });
+  }
+
+  function empezarEdicionPrecio(pr) {
+    setEditandoPrecioId(pr.id);
+    setPrecioEditado(String(pr.precio));
+  }
+
+  async function guardarPrecioEditado(pr) {
+    if (!precioEditado || Number(precioEditado) <= 0) return;
+    const actualizado = { ...pr, precio: Number(precioEditado), fecha: today() };
+    setPrecios((prev) => prev.map((x) => (x.id === pr.id ? actualizado : x)));
+    setEditandoPrecioId(null);
+    await fetch("/api/tabla/precios_proveedor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filas: [actualizado] }),
     });
   }
 
@@ -334,15 +353,48 @@ export default function Proveedores() {
                               style={{
                                 display: "flex",
                                 justifyContent: "space-between",
+                                alignItems: "center",
                                 fontSize: "13px",
                                 padding: "6px 0",
                                 borderBottom: `1px solid ${colores.borde}`,
+                                gap: "8px",
                               }}
                             >
-                              <span>{pr.productoNombre}</span>
-                              <span style={{ color: colores.dorado, fontWeight: 700 }}>
-                                ${Math.round(pr.precio).toLocaleString("es-CO")}
-                              </span>
+                              <span style={{ flex: 1 }}>{pr.productoNombre}</span>
+                              {editandoPrecioId === pr.id ? (
+                                <>
+                                  <input
+                                    type="number"
+                                    value={precioEditado}
+                                    onChange={(e) => setPrecioEditado(e.target.value)}
+                                    style={{ width: "90px", padding: "6px", borderRadius: "6px", border: `1px solid ${colores.acento}`, background: "#0B1420", color: colores.texto, fontSize: "13px" }}
+                                  />
+                                  <button
+                                    onClick={() => guardarPrecioEditado(pr)}
+                                    style={{ background: colores.acento, border: "none", borderRadius: "6px", padding: "6px 10px", color: "#0B1420", fontWeight: 700, cursor: "pointer", fontSize: "12px" }}
+                                  >
+                                    Guardar
+                                  </button>
+                                  <button
+                                    onClick={() => setEditandoPrecioId(null)}
+                                    style={{ background: "none", border: `1px solid ${colores.borde}`, borderRadius: "6px", padding: "6px 10px", color: colores.textoSecundario, cursor: "pointer", fontSize: "12px" }}
+                                  >
+                                    Cancelar
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <span style={{ color: colores.dorado, fontWeight: 700 }}>
+                                    ${Math.round(pr.precio).toLocaleString("es-CO")}
+                                  </span>
+                                  <button
+                                    onClick={() => empezarEdicionPrecio(pr)}
+                                    style={{ background: "none", border: `1px solid ${colores.acento}`, borderRadius: "6px", padding: "6px 10px", color: colores.acento, cursor: "pointer", fontSize: "12px" }}
+                                  >
+                                    Editar
+                                  </button>
+                                </>
+                              )}
                             </div>
                           ))}
                         </div>
