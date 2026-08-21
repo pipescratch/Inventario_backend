@@ -20,10 +20,65 @@ const colores = {
   dorado: "#E3B04B",
 };
 
+// Íconos de línea propios (stroke = currentColor), en vez de emoji, para que
+// se vean igual en cualquier dispositivo y con el mismo peso visual.
+function IconoCamara(props) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+      <circle cx="12" cy="13" r="3.4" />
+    </svg>
+  );
+}
+function IconoCaja(props) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M3 8l9-4 9 4-9 4-9-4z" />
+      <path d="M3 8v9l9 4 9-4V8" />
+      <path d="M12 12v9" />
+    </svg>
+  );
+}
+function IconoDeslizadores(props) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 6h9M17 6h3M4 12h3M9 12h11M4 18h13M21 18h-1" />
+      <circle cx="15" cy="6" r="2.1" />
+      <circle cx="7" cy="12" r="2.1" />
+      <circle cx="17" cy="18" r="2.1" />
+    </svg>
+  );
+}
+function IconoReloj(props) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3.2 2" />
+    </svg>
+  );
+}
+function IconoBotella(props) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M10 2h4v3.2c0 .5.2 1 .6 1.4l1 1c.9.9 1.4 2 1.4 3.3V20a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2V10.9c0-1.3.5-2.4 1.4-3.3l1-1c.4-.4.6-.9.6-1.4V2z" />
+      <path d="M9 13h6" />
+      <path d="M10 2h4" />
+    </svg>
+  );
+}
+function IconoApreton(props) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M2 12l4-3 3 2 4-3 3 2 4-2v6l-4 2-3-2-4 3-3-2-4 1z" />
+      <path d="M8 11l2 2 3-3" />
+    </svg>
+  );
+}
+
 const accesosRapidos = [
-  { href: "/pedidos-anteriores", label: "Historial", icono: "📋" },
-  { href: "/botellas-abiertas", label: "Botellas abiertas", icono: "🍾" },
-  { href: "/proveedores", label: "Proveedores", icono: "🤝" },
+  { href: "/pedidos-anteriores", label: "Historial", Icono: IconoReloj },
+  { href: "/botellas-abiertas", label: "Botellas abiertas", Icono: IconoBotella },
+  { href: "/proveedores", label: "Proveedores", Icono: IconoApreton },
 ];
 
 const acciones = [
@@ -31,19 +86,19 @@ const acciones = [
     href: "/pedido",
     titulo: "Hacer pedido semanal",
     detalle: "Sube fotos del inventario y genera el pedido",
-    icono: "📸",
+    Icono: IconoCamara,
   },
   {
     href: "/inventario",
     titulo: "Ver inventario",
     detalle: "Consulta el estado actual de bar y bodega",
-    icono: "📦",
+    Icono: IconoCaja,
   },
   {
     href: "/configuracion",
     titulo: "Configurar bases",
     detalle: "Ajusta niveles Normal / Medio / Alto",
-    icono: "⚙️",
+    Icono: IconoDeslizadores,
   },
 ];
 
@@ -103,23 +158,23 @@ export default function Home() {
             marginBottom: "28px",
           }}
         >
-          {accesosRapidos.map((a) => (
+          {accesosRapidos.map(({ href, label, Icono }) => (
             <Link
-              key={a.href}
-              href={a.href}
+              key={href}
+              href={href}
               style={{
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: "6px",
+                gap: "8px",
                 background: colores.tarjeta,
                 border: `1px solid ${colores.borde}`,
                 borderRadius: "14px",
-                padding: "14px 6px",
+                padding: "16px 6px",
                 textDecoration: "none",
               }}
             >
-              <span style={{ fontSize: "22px" }}>{a.icono}</span>
+              <Icono style={{ color: colores.acento }} />
               <span
                 style={{
                   color: colores.texto,
@@ -129,7 +184,7 @@ export default function Home() {
                   lineHeight: 1.2,
                 }}
               >
-                {a.label}
+                {label}
               </span>
             </Link>
           ))}
@@ -137,10 +192,10 @@ export default function Home() {
 
         {/* Acciones principales */}
         <section style={{ display: "grid", gap: "14px" }}>
-          {acciones.map((a) => (
+          {acciones.map(({ href, titulo, detalle, Icono }) => (
             <Link
-              key={a.href}
-              href={a.href}
+              key={href}
+              href={href}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -154,7 +209,6 @@ export default function Home() {
             >
               <div
                 style={{
-                  fontSize: "26px",
                   width: "52px",
                   height: "52px",
                   borderRadius: "12px",
@@ -163,9 +217,10 @@ export default function Home() {
                   alignItems: "center",
                   justifyContent: "center",
                   flexShrink: 0,
+                  color: colores.acento,
                 }}
               >
-                {a.icono}
+                <Icono width="26" height="26" />
               </div>
               <div style={{ flex: 1 }}>
                 <h2
@@ -177,10 +232,10 @@ export default function Home() {
                     margin: "0 0 3px 0",
                   }}
                 >
-                  {a.titulo}
+                  {titulo}
                 </h2>
                 <p style={{ color: colores.textoSecundario, fontSize: "13px", margin: 0 }}>
-                  {a.detalle}
+                  {detalle}
                 </p>
               </div>
               <span style={{ color: colores.dorado, fontSize: "20px" }}>→</span>
