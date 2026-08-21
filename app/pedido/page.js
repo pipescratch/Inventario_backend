@@ -85,6 +85,7 @@ export default function Pedido() {
   const [guardado, setGuardado] = useState(false);
   const [pedidoPorProveedor, setPedidoPorProveedor] = useState(null);
   const [copiado, setCopiado] = useState(null);
+  const [copiadoSinProveedor, setCopiadoSinProveedor] = useState(false);
   const [historialId, setHistorialId] = useState(null);
   const [pedidoId, setPedidoId] = useState(null);
   const [confirmando, setConfirmando] = useState(false);
@@ -567,10 +568,51 @@ export default function Pedido() {
       doc.setFontSize(13);
       doc.setFont(undefined, "bold");
       doc.text(`TOTAL GENERAL: $${Math.round(totalGeneral).toLocaleString("es-CO")}`, 14, y + 6);
+      y += 16;
+
+      if (pedidoPorProveedor.sinProveedor.length > 0) {
+        if (y > 260) {
+          doc.addPage();
+          y = 16;
+        }
+        doc.setFontSize(12);
+        doc.setFont(undefined, "bold");
+        doc.setTextColor(200, 100, 0);
+        doc.text("Sin proveedor asignado (falta registrar precio):", 14, y);
+        doc.setFont(undefined, "normal");
+        doc.setTextColor(0);
+        y += 7;
+        pedidoPorProveedor.sinProveedor.forEach((it) => {
+          if (y > 280) {
+            doc.addPage();
+            y = 16;
+          }
+          doc.setFontSize(9);
+          doc.text(`${String(it.rawName).slice(0, 55)} — faltan ${it.diferencia}`, 14, y);
+          y += 5;
+        });
+      }
 
       doc.save(`pedido-${fechaConteo}.pdf`);
     } catch (err) {
       setError("No se pudo generar el PDF. " + err.message);
+    }
+  }
+
+  function textoWhatsAppSinProveedor() {
+    const lineas = pedidoPorProveedor.sinProveedor.map(
+      (it) => `• ${it.rawName} — faltan ${it.diferencia}`
+    );
+    return `Productos a pedir sin proveedor asignado (falta registrar precio):\n\n${lineas.join("\n")}`;
+  }
+
+  async function copiarSinProveedor() {
+    try {
+      await navigator.clipboard.writeText(textoWhatsAppSinProveedor());
+      setCopiadoSinProveedor(true);
+      setTimeout(() => setCopiadoSinProveedor(false), 2000);
+    } catch {
+      setError("No se pudo copiar. Selecciona y copia el texto manualmente.");
     }
   }
 
@@ -1189,9 +1231,27 @@ export default function Pedido() {
                     {it.rawName} — faltan {it.diferencia}
                   </div>
                 ))}
-                <p style={{ color: colores.textoSecundario, fontSize: "12px", marginTop: "8px" }}>
-                  Ve a Proveedores y registra un precio para poder incluirlos aquí.
+                <p style={{ color: colores.textoSecundario, fontSize: "12px", margin: "8px 0" }}>
+                  No tienen precio registrado todavía, pero igual quedan incluidos en el PDF
+                  y los puedes copiar aquí para preguntarle el precio a cualquier proveedor
+                  por WhatsApp. Luego ve a Proveedores y registra su precio para que la
+                  próxima vez se agrupen solos.
                 </p>
+                <button
+                  onClick={copiarSinProveedor}
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    border: `1px solid ${colores.alerta}`,
+                    background: copiadoSinProveedor ? colores.alerta : "none",
+                    color: copiadoSinProveedor ? "#0B1420" : colores.alerta,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  {copiadoSinProveedor ? "✓ Copiado" : "Copiar para WhatsApp"}
+                </button>
               </div>
             )}
 
