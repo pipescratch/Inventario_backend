@@ -564,12 +564,15 @@ export default function Pedido() {
       const anchoNombre = margenDer - margenIzq - 60;
 
       pedidoPorProveedor.grupos.forEach((grupo) => {
-        if (y > 250) {
+        const filaAltura = 6;
+        const alturaCaja = 14 + grupo.items.length * filaAltura + 10;
+        // Si la caja completa no cabe en lo que queda de la página, se
+        // pasa a una nueva antes de empezar a dibujarla (evita que quede
+        // cortada a la mitad).
+        if (y + alturaCaja > 290) {
           doc.addPage();
           y = 20;
         }
-        const filaAltura = 6;
-        const alturaCaja = 14 + grupo.items.length * filaAltura + 10;
 
         // Caja del proveedor con fondo suave
         doc.setFillColor(245, 247, 249);
@@ -635,26 +638,30 @@ export default function Pedido() {
       y += 14;
 
       if (pedidoPorProveedor.sinProveedor.length > 0) {
-        if (y > 250) {
+        if (y > 265) {
           doc.addPage();
           y = 20;
         }
-        const alturaCaja = 12 + pedidoPorProveedor.sinProveedor.length * 5.5;
-        doc.setFillColor(255, 246, 230);
-        doc.setDrawColor(227, 176, 74);
-        doc.roundedRect(margenIzq, y, margenDer - margenIzq, alturaCaja, 2, 2, "FD");
-        let yCaja = y + 8;
         doc.setFontSize(11);
         doc.setFont(undefined, "bold");
         doc.setTextColor(180, 95, 0);
-        doc.text("Sin proveedor asignado (falta registrar precio)", margenIzq + 4, yCaja);
-        yCaja += 6;
+        doc.text("Sin proveedor asignado (falta registrar precio)", margenIzq, y);
+        y += 3;
+        doc.setDrawColor(227, 176, 74);
+        doc.setLineWidth(0.5);
+        doc.line(margenIzq, y, margenDer, y);
+        y += 6;
+
         doc.setFont(undefined, "normal");
         doc.setFontSize(9);
         doc.setTextColor(90, 60, 20);
         pedidoPorProveedor.sinProveedor.forEach((it) => {
-          doc.text(`• ${String(it.rawName).slice(0, 55)} — faltan ${it.diferencia}`, margenIzq + 4, yCaja);
-          yCaja += 5.5;
+          if (y > 285) {
+            doc.addPage();
+            y = 20;
+          }
+          doc.text(`• ${String(it.rawName).slice(0, 55)} — faltan ${it.diferencia}`, margenIzq, y);
+          y += 5.5;
         });
       }
 
