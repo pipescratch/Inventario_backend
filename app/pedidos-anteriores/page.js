@@ -81,6 +81,8 @@ export default function Historial() {
   const [eliminandoId, setEliminandoId] = useState(null);
   const [copiado, setCopiado] = useState(null);
   const [proveedores, setProveedores] = useState([]);
+  const [precios, setPrecios] = useState([]);
+  const [reasignandoId, setReasignandoId] = useState(null);
   const [recibiendoId, setRecibiendoId] = useState(null);
   const [lineasRecepcion, setLineasRecepcion] = useState([]);
 
@@ -92,14 +94,16 @@ export default function Historial() {
     setCargando(true);
     setError(null);
     try {
-      const [resPedidos, resInv, resProv] = await Promise.all([
+      const [resPedidos, resInv, resProv, resPrecios] = await Promise.all([
         fetch("/api/tabla/pedidos"),
         fetch("/api/tabla/historial_inventarios"),
         fetch("/api/tabla/proveedores"),
+        fetch("/api/tabla/precios_proveedor"),
       ]);
       const dataPedidos = await resPedidos.json();
       const dataInv = await resInv.json();
       const dataProv = await resProv.json();
+      const dataPrecios = await resPrecios.json();
       if (dataPedidos.status === "ok") {
         setPedidos(dataPedidos.filas.sort((a, b) => (b.fecha + b.hora).localeCompare(a.fecha + a.hora)));
       }
@@ -108,6 +112,9 @@ export default function Historial() {
       }
       if (dataProv.status === "ok") {
         setProveedores(dataProv.filas);
+      }
+      if (dataPrecios.status === "ok") {
+        setPrecios(dataPrecios.filas);
       }
     } catch (err) {
       setError("No se pudo conectar con el servidor. " + err.message);
@@ -273,6 +280,66 @@ export default function Historial() {
       setError("No se pudo borrar. " + err.message);
     } finally {
       setEliminandoId(null);
+    }
+  }
+
+  // Marca un producto como "no disponible" con el proveedor que tiene
+  // actualmente, y lo reasigna automáticamente al SIGUIENTE proveedor más
+  // barato que tenga precio registrado para ese producto (que no se haya
+  // probado ya en este mismo pedido). Si no queda ninguna otra opción,
+  // el producto cae a "Sin proveedor asignado".
+  async function marcarNoDisponible(pedido, indexLinea) {
+    setReasignandoId(pedido.id + "-" + indexLinea);
+    setError(null);
+    try {
+      const ubicacion = ubicacionDe(pedido.items) || "bar";
+      const lineas = lineasDe(pedido.items).map((l) => ({ ...l }));
+      const item = lineas[indexLinea];
+      if (!item || !item.productoId) return;
+
+      const excluidos = Array.isArray(item.excluidos) ? [...item.excluidos] : [];
+      if (item.proveedor) excluidos.push(item.proveedor);
+
+      const opciones = precios
+        .filter((p) => p.producto_id === item.productoId && !excluidos.includes(p.proveedor_nombre))
+        .sort((a, b) => a.precio - b.precio);
+
+      if (opciones.length > 0) {
+        const mejor = opciones[0];
+        lineas[indexLinea] = {
+          ...item,
+          proveedor: mejor.proveedor_nombre,
+          precio: mejor.precio,
+          total: mejor.precio * item.cantidad,
+          excluidos,
+        };
+      } else {
+        lineas[indexLinea] = {
+          ...item,
+          proveedor: null,
+          precio: null,
+          total: 0,
+          excluidos,
+        };
+      }
+
+      const costoTotal = lineas.reduce((s, l) => s + (Number(l.total) || 0), 0);
+      const pedidoActualizado = {
+        ...pedido,
+        items: { ubicacion, lineas },
+        costo_total: costoTotal,
+      };
+
+      await fetch("/api/tabla/pedidos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filas: [pedidoActualizado] }),
+      });
+      await cargar();
+    } catch (err) {
+      setError("No se pudo reasignar el producto. " + err.message);
+    } finally {
+      setReasignandoId(null);
     }
   }
 
@@ -479,29 +546,60 @@ export default function Historial() {
                     </button>
                     {abierto && editandoId !== p.id && (
                       <div style={{ marginTop: "12px", paddingTop: "12px", borderTop: `1px solid ${colores.borde}` }}>
-                        {lineas.map((it, i) => (
-                          <div key={i} style={{ padding: "4px 0" }}>
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                fontSize: "13px",
-                                color: it.recibido === false ? "#F87171" : colores.textoSecundario,
-                              }}
-                            >
-                              <span>
-                                {it.recibido === false && "⚠️ "}
-                                {it.nombre} × {it.cantidad} ({it.proveedor})
-                              </span>
-                              <span>${Math.round(it.total).toLocaleString("es-CO")}</span>
-                            </div>
-                            {it.recibido === false && it.nota && (
-                              <div style={{ fontSize: "11px", color: "#F87171", marginTop: "2px" }}>
-                                Faltante: {it.nota}
+                        {lineas.map((it, i) => {
+                          const sinProveedor = !it.proveedor;
+                          return (
+                            <div key={i} style={{ padding: "6px 0", borderBottom: `1px solid ${colores.borde}` }}>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  gap: "8px",
+                                  fontSize: "13px",
+                                  color: it.recibido === false || sinProveedor ? "#F87171" : colores.textoSecundario,
+                                }}
+                              >
+                                <span style={{ flex: 1 }}>
+                                  {it.recibido === false && "⚠️ "}
+                                  {it.nombre} × {it.cantidad}
+                                  {sinProveedor ? " — sin proveedor" : ` (${it.proveedor})`}
+                                </span>
+                                <span style={{ flexShrink: 0 }}>
+                                  {sinProveedor ? "—" : `$${Math.round(it.total).toLocaleString("es-CO")}`}
+                                </span>
+                                {pendiente && !sinProveedor && it.productoId && (
+                                  <button
+                                    onClick={() => marcarNoDisponible(p, i)}
+                                    disabled={reasignandoId === p.id + "-" + i}
+                                    style={{
+                                      flexShrink: 0,
+                                      background: "none",
+                                      border: `1px solid ${colores.alerta}`,
+                                      color: colores.alerta,
+                                      borderRadius: "6px",
+                                      padding: "3px 8px",
+                                      fontSize: "11px",
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    {reasignandoId === p.id + "-" + i ? "..." : "No disponible"}
+                                  </button>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        ))}
+                              {it.recibido === false && it.nota && (
+                                <div style={{ fontSize: "11px", color: "#F87171", marginTop: "2px" }}>
+                                  Faltante: {it.nota}
+                                </div>
+                              )}
+                              {sinProveedor && pendiente && (
+                                <div style={{ fontSize: "11px", color: colores.textoSecundario, marginTop: "2px" }}>
+                                  Ningún proveedor tiene precio registrado. Ve a Proveedores para agregar uno.
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
 
                         <button
                           onClick={() => descargarPDF(p)}
