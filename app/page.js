@@ -10,6 +10,22 @@ const body = Inter({
   weight: ["400", "500", "600"],
 });
 
+const colores = {
+  fondo: "linear-gradient(180deg, #0B1420 0%, #10202B 100%)",
+  tarjeta: "#16232E",
+  borde: "#24333F",
+  texto: "#F2EFE9",
+  textoSecundario: "#9FB0BA",
+  acento: "#2DD4BF",
+  dorado: "#E3B04B",
+};
+
+const accesosRapidos = [
+  { href: "/pedidos-anteriores", label: "Historial", icono: "📋" },
+  { href: "/botellas-abiertas", label: "Botellas abiertas", icono: "🍾" },
+  { href: "/proveedores", label: "Proveedores", icono: "🤝" },
+];
+
 const acciones = [
   {
     href: "/pedido",
@@ -21,7 +37,7 @@ const acciones = [
     href: "/inventario",
     titulo: "Ver inventario",
     detalle: "Consulta el estado actual de bar y bodega",
-    icono: "📋",
+    icono: "📦",
   },
   {
     href: "/configuracion",
@@ -31,38 +47,26 @@ const acciones = [
   },
 ];
 
-const accesosSecundarios = [
-  { href: "/pedidos-anteriores", label: "Historial" },
-  { href: "/botellas-abiertas", label: "Botellas abiertas" },
-  { href: "/proveedores", label: "Proveedores" },
-];
-
 export default function Home() {
   return (
     <main
       style={{
-        background: "linear-gradient(180deg, #0B1420 0%, #10202B 100%)",
+        background: colores.fondo,
         fontFamily: body.style.fontFamily,
         minHeight: "100vh",
       }}
     >
-      <div
-        style={{
-          maxWidth: "960px",
-          margin: "0 auto",
-          padding: "48px 24px",
-        }}
-      >
+      <div style={{ maxWidth: "720px", margin: "0 auto", padding: "40px 20px 56px" }}>
         {/* Encabezado */}
-        <header style={{ marginBottom: "40px" }}>
+        <header style={{ marginBottom: "28px" }}>
           <p
             style={{
-              color: "#2DD4BF",
+              color: colores.acento,
               fontWeight: 600,
-              fontSize: "14px",
-              letterSpacing: "0.08em",
+              fontSize: "13px",
+              letterSpacing: "0.1em",
               textTransform: "uppercase",
-              marginBottom: "8px",
+              marginBottom: "6px",
             }}
           >
             La Azotea Ocean Bar
@@ -70,96 +74,119 @@ export default function Home() {
           <h1
             style={{
               fontFamily: display.style.fontFamily,
-              color: "#F2EFE9",
+              color: colores.texto,
               fontWeight: 700,
-              fontSize: "34px",
+              fontSize: "32px",
               margin: 0,
             }}
           >
             Inventario
           </h1>
 
-          {/* Divisor de firma: línea ondulada dorada */}
-          <svg
-            width="120"
-            height="10"
-            viewBox="0 0 120 10"
-            style={{ marginTop: "16px" }}
-            aria-hidden="true"
-          >
+          {/* Línea ondulada dorada, firma de la marca */}
+          <svg width="120" height="10" viewBox="0 0 120 10" style={{ marginTop: "14px" }} aria-hidden="true">
             <path
               d="M0 5 Q 10 0, 20 5 T 40 5 T 60 5 T 80 5 T 100 5 T 120 5"
               fill="none"
-              stroke="#E3B04B"
+              stroke={colores.dorado}
               strokeWidth="2"
             />
           </svg>
         </header>
 
-        {/* Acciones principales */}
+        {/* Accesos rápidos: tarjetas compactas con ícono, arriba de todo */}
         <section
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: "16px",
-            marginBottom: "40px",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: "10px",
+            marginBottom: "28px",
           }}
         >
+          {accesosRapidos.map((a) => (
+            <Link
+              key={a.href}
+              href={a.href}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: "6px",
+                background: colores.tarjeta,
+                border: `1px solid ${colores.borde}`,
+                borderRadius: "14px",
+                padding: "14px 6px",
+                textDecoration: "none",
+              }}
+            >
+              <span style={{ fontSize: "22px" }}>{a.icono}</span>
+              <span
+                style={{
+                  color: colores.texto,
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  textAlign: "center",
+                  lineHeight: 1.2,
+                }}
+              >
+                {a.label}
+              </span>
+            </Link>
+          ))}
+        </section>
+
+        {/* Acciones principales */}
+        <section style={{ display: "grid", gap: "14px" }}>
           {acciones.map((a) => (
             <Link
               key={a.href}
               href={a.href}
               style={{
-                display: "block",
-                background: "#16232E",
-                border: "1px solid #24333F",
+                display: "flex",
+                alignItems: "center",
+                gap: "16px",
+                background: colores.tarjeta,
+                border: `1px solid ${colores.borde}`,
                 borderRadius: "16px",
-                padding: "24px",
+                padding: "20px",
                 textDecoration: "none",
-                color: "inherit",
               }}
             >
-              <div style={{ fontSize: "30px", marginBottom: "16px" }}>
-                {a.icono}
-              </div>
-              <h2
+              <div
                 style={{
-                  fontFamily: display.style.fontFamily,
-                  color: "#F2EFE9",
-                  fontWeight: 700,
-                  fontSize: "18px",
-                  margin: "0 0 4px 0",
+                  fontSize: "26px",
+                  width: "52px",
+                  height: "52px",
+                  borderRadius: "12px",
+                  background: "rgba(45, 212, 191, 0.1)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
                 }}
               >
-                {a.titulo}
-              </h2>
-              <p style={{ color: "#9FB0BA", fontSize: "14px", margin: 0 }}>
-                {a.detalle}
-              </p>
+                {a.icono}
+              </div>
+              <div style={{ flex: 1 }}>
+                <h2
+                  style={{
+                    fontFamily: display.style.fontFamily,
+                    color: colores.texto,
+                    fontWeight: 700,
+                    fontSize: "17px",
+                    margin: "0 0 3px 0",
+                  }}
+                >
+                  {a.titulo}
+                </h2>
+                <p style={{ color: colores.textoSecundario, fontSize: "13px", margin: 0 }}>
+                  {a.detalle}
+                </p>
+              </div>
+              <span style={{ color: colores.dorado, fontSize: "20px" }}>→</span>
             </Link>
           ))}
         </section>
-
-        {/* Accesos secundarios */}
-        <nav style={{ display: "flex", flexWrap: "wrap", gap: "12px" }}>
-          {accesosSecundarios.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              style={{
-                fontSize: "14px",
-                padding: "8px 16px",
-                borderRadius: "999px",
-                color: "#F2EFE9",
-                border: "1px solid #24333F",
-                background: "#16232E",
-                textDecoration: "none",
-              }}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
       </div>
     </main>
   );
