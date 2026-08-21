@@ -814,12 +814,13 @@ export default function Pedido() {
     >
       <div style={{ maxWidth: "720px", margin: "0 auto", padding: "32px 20px" }}>
         <div style={{ marginBottom: "24px" }}>
-          <Link
-            href="/"
-            style={{ color: colores.textoSecundario, textDecoration: "none", fontSize: "14px" }}
-          >
-            ← Inicio
-          </Link>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px" }}>
+            <Link href="/" style={{ color: colores.textoSecundario, textDecoration: "none" }}>
+              Inicio
+            </Link>
+            <span style={{ color: colores.textoSecundario, opacity: 0.5 }}>/</span>
+            <span style={{ color: colores.texto, fontWeight: 600 }}>Hacer pedido</span>
+          </div>
         </div>
 
         <h1 style={{ fontSize: "28px", fontWeight: 700, marginBottom: "8px" }}>
