@@ -237,6 +237,21 @@ export default function Historial() {
     }
   }
 
+  async function eliminarInventario(id) {
+    const confirmar = window.confirm("¿Seguro que quieres borrar este conteo de inventario? No se puede deshacer.");
+    if (!confirmar) return;
+    setEliminandoId(id);
+    setError(null);
+    try {
+      await fetch(`/api/tabla/historial_inventarios?id=${id}`, { method: "DELETE" });
+      await cargar();
+    } catch (err) {
+      setError("No se pudo borrar. " + err.message);
+    } finally {
+      setEliminandoId(null);
+    }
+  }
+
   async function copiarWhatsApp(grupo, pedidoId) {
     try {
       await navigator.clipboard.writeText(textoWhatsApp(grupo));
@@ -732,6 +747,24 @@ export default function Historial() {
                       ))}
                     </div>
                   )}
+                  <button
+                    onClick={() => eliminarInventario(inv.id)}
+                    disabled={eliminandoId === inv.id}
+                    style={{
+                      width: "100%",
+                      marginTop: "12px",
+                      padding: "8px",
+                      borderRadius: "8px",
+                      border: "1px solid #F87171",
+                      background: "none",
+                      color: "#F87171",
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      cursor: eliminandoId === inv.id ? "default" : "pointer",
+                    }}
+                  >
+                    {eliminandoId === inv.id ? "Borrando..." : "Borrar conteo"}
+                  </button>
                 </div>
               );
             })}
