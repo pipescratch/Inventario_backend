@@ -38,6 +38,8 @@ export default function Proveedores() {
   const [nuevoPrecio, setNuevoPrecio] = useState("");
   const [editandoPrecioId, setEditandoPrecioId] = useState(null);
   const [precioEditado, setPrecioEditado] = useState("");
+  const [editandoMasivoId, setEditandoMasivoId] = useState(null);
+  const [preciosMasivos, setPreciosMasivos] = useState({});
 
   useEffect(() => {
     cargar();
@@ -108,6 +110,56 @@ export default function Proveedores() {
   function empezarEdicionPrecio(pr) {
     setEditandoPrecioId(pr.id);
     setPrecioEditado(String(pr.precio));
+  }
+
+  function empezarEdicionMasiva(provId, listaPrecios) {
+    const valores = {};
+    listaPrecios.forEach((pr) => {
+      valores[pr.id] = String(pr.precio);
+    });
+    setPreciosMasivos(valores);
+    setEditandoMasivoId(provId);
+  }
+
+  function cancelarEdicionMasiva() {
+    setEditandoMasivoId(null);
+    setPreciosMasivos({});
+  }
+
+  async function guardarPreciosMasivos(listaPrecios) {
+    const filas = listaPrecios
+      .filter((pr) => preciosMasivos[pr.id] !== undefined && Number(preciosMasivos[pr.id]) > 0)
+      .map((pr) => {
+        const { productoNombre, ...prLimpio } = pr;
+        return { ...prLimpio, precio: Number(preciosMasivos[pr.id]), fecha: today() };
+      });
+
+    if (filas.length === 0) {
+      cancelarEdicionMasiva();
+      return;
+    }
+
+    setPrecios((prev) => {
+      const porId = Object.fromEntries(filas.map((f) => [f.id, f]));
+      return prev.map((x) => (porId[x.id] ? porId[x.id] : x));
+    });
+    cancelarEdicionMasiva();
+
+    try {
+      const res = await fetch("/api/tabla/precios_proveedor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filas }),
+      });
+      const data = await res.json();
+      if (data.status !== "ok") {
+        setError("No se pudieron guardar los precios: " + (data.message || "error desconocido"));
+        cargar();
+      }
+    } catch (err) {
+      setError("Error de red al guardar los precios.");
+      cargar();
+    }
   }
 
   async function guardarPrecioEditado(pr) {
@@ -358,58 +410,94 @@ export default function Proveedores() {
                           Sin productos con precio todavía.
                         </p>
                       ) : (
-                        <div style={{ display: "grid", gap: "6px", marginBottom: "12px" }}>
-                          {preciosP.map((pr) => (
-                            <div
-                              key={pr.producto_id}
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                fontSize: "13px",
-                                padding: "6px 0",
-                                borderBottom: `1px solid ${colores.borde}`,
-                                gap: "8px",
-                              }}
-                            >
-                              <span style={{ flex: 1 }}>{pr.productoNombre}</span>
-                              {editandoPrecioId === pr.id ? (
-                                <>
+                        <>
+                          <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginBottom: "10px" }}>
+                            {editandoMasivoId === p.id ? (
+                              <>
+                                <button
+                                  onClick={() => guardarPreciosMasivos(preciosP)}
+                                  style={{ background: colores.acento, border: "none", borderRadius: "6px", padding: "6px 12px", color: "#0B1420", fontWeight: 700, cursor: "pointer", fontSize: "12px" }}
+                                >
+                                  Guardar todos
+                                </button>
+                                <button
+                                  onClick={cancelarEdicionMasiva}
+                                  style={{ background: "none", border: `1px solid ${colores.borde}`, borderRadius: "6px", padding: "6px 12px", color: colores.textoSecundario, cursor: "pointer", fontSize: "12px" }}
+                                >
+                                  Cancelar
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => empezarEdicionMasiva(p.id, preciosP)}
+                                style={{ background: "none", border: `1px solid ${colores.acento}`, borderRadius: "6px", padding: "6px 12px", color: colores.acento, cursor: "pointer", fontSize: "12px" }}
+                              >
+                                Editar todos
+                              </button>
+                            )}
+                          </div>
+                          <div style={{ display: "grid", gap: "6px", marginBottom: "12px" }}>
+                            {preciosP.map((pr) => (
+                              <div
+                                key={pr.producto_id}
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  fontSize: "13px",
+                                  padding: "6px 0",
+                                  borderBottom: `1px solid ${colores.borde}`,
+                                  gap: "8px",
+                                }}
+                              >
+                                <span style={{ flex: 1 }}>{pr.productoNombre}</span>
+                                {editandoMasivoId === p.id ? (
                                   <input
                                     type="number"
-                                    value={precioEditado}
-                                    onChange={(e) => setPrecioEditado(e.target.value)}
+                                    value={preciosMasivos[pr.id] ?? ""}
+                                    onChange={(e) =>
+                                      setPreciosMasivos((prev) => ({ ...prev, [pr.id]: e.target.value }))
+                                    }
                                     style={{ width: "90px", padding: "6px", borderRadius: "6px", border: `1px solid ${colores.acento}`, background: "#0B1420", color: colores.texto, fontSize: "13px" }}
                                   />
-                                  <button
-                                    onClick={() => guardarPrecioEditado(pr)}
-                                    style={{ background: colores.acento, border: "none", borderRadius: "6px", padding: "6px 10px", color: "#0B1420", fontWeight: 700, cursor: "pointer", fontSize: "12px" }}
-                                  >
-                                    Guardar
-                                  </button>
-                                  <button
-                                    onClick={() => setEditandoPrecioId(null)}
-                                    style={{ background: "none", border: `1px solid ${colores.borde}`, borderRadius: "6px", padding: "6px 10px", color: colores.textoSecundario, cursor: "pointer", fontSize: "12px" }}
-                                  >
-                                    Cancelar
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <span style={{ color: colores.dorado, fontWeight: 700 }}>
-                                    ${Math.round(pr.precio).toLocaleString("es-CO")}
-                                  </span>
-                                  <button
-                                    onClick={() => empezarEdicionPrecio(pr)}
-                                    style={{ background: "none", border: `1px solid ${colores.acento}`, borderRadius: "6px", padding: "6px 10px", color: colores.acento, cursor: "pointer", fontSize: "12px" }}
-                                  >
-                                    Editar
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                                ) : editandoPrecioId === pr.id ? (
+                                  <>
+                                    <input
+                                      type="number"
+                                      value={precioEditado}
+                                      onChange={(e) => setPrecioEditado(e.target.value)}
+                                      style={{ width: "90px", padding: "6px", borderRadius: "6px", border: `1px solid ${colores.acento}`, background: "#0B1420", color: colores.texto, fontSize: "13px" }}
+                                    />
+                                    <button
+                                      onClick={() => guardarPrecioEditado(pr)}
+                                      style={{ background: colores.acento, border: "none", borderRadius: "6px", padding: "6px 10px", color: "#0B1420", fontWeight: 700, cursor: "pointer", fontSize: "12px" }}
+                                    >
+                                      Guardar
+                                    </button>
+                                    <button
+                                      onClick={() => setEditandoPrecioId(null)}
+                                      style={{ background: "none", border: `1px solid ${colores.borde}`, borderRadius: "6px", padding: "6px 10px", color: colores.textoSecundario, cursor: "pointer", fontSize: "12px" }}
+                                    >
+                                      Cancelar
+                                    </button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span style={{ color: colores.dorado, fontWeight: 700 }}>
+                                      ${Math.round(pr.precio).toLocaleString("es-CO")}
+                                    </span>
+                                    <button
+                                      onClick={() => empezarEdicionPrecio(pr)}
+                                      style={{ background: "none", border: `1px solid ${colores.acento}`, borderRadius: "6px", padding: "6px 10px", color: colores.acento, cursor: "pointer", fontSize: "12px" }}
+                                    >
+                                      Editar
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </>
                       )}
 
                       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
