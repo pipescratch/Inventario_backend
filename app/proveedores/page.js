@@ -112,14 +112,25 @@ export default function Proveedores() {
 
   async function guardarPrecioEditado(pr) {
     if (!precioEditado || Number(precioEditado) <= 0) return;
-    const actualizado = { ...pr, precio: Number(precioEditado), fecha: today() };
+    const { productoNombre, ...prLimpio } = pr;
+    const actualizado = { ...prLimpio, precio: Number(precioEditado), fecha: today() };
     setPrecios((prev) => prev.map((x) => (x.id === pr.id ? actualizado : x)));
     setEditandoPrecioId(null);
-    await fetch("/api/tabla/precios_proveedor", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filas: [actualizado] }),
-    });
+    try {
+      const res = await fetch("/api/tabla/precios_proveedor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filas: [actualizado] }),
+      });
+      const data = await res.json();
+      if (data.status !== "ok") {
+        setError("No se pudo guardar el precio: " + (data.message || "error desconocido"));
+        cargar();
+      }
+    } catch (err) {
+      setError("Error de red al guardar el precio.");
+      cargar();
+    }
   }
 
   async function guardarProveedor() {
