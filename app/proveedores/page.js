@@ -532,9 +532,152 @@ export default function Proveedores() {
                 </div>
               );
             })}
-          </div>
         )}
       </div>
+
+      {cargaPreciosProveedor && (
+        <div
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+            display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 100,
+          }}
+        >
+          <div
+            style={{
+              background: "#0F1B2A", borderRadius: "16px 16px 0 0", padding: "20px",
+              width: "100%", maxWidth: "560px", maxHeight: "85vh", overflowY: "auto",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <h2 style={{ fontSize: "16px", fontWeight: 700, margin: 0 }}>
+                Cargar precios — {cargaPreciosProveedor.nombre}
+              </h2>
+              <button
+                onClick={cerrarCargaPrecios}
+                style={{ background: "none", border: "none", color: colores.textoSecundario, fontSize: "20px", cursor: "pointer" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {errorCarga && (
+              <div style={{ background: "rgba(255,80,80,0.1)", border: "1px solid #FF5050", borderRadius: "8px", padding: "10px", marginBottom: "12px", fontSize: "13px", color: "#FF8080" }}>
+                {errorCarga}
+              </div>
+            )}
+
+            {pasoCarga === "subir" && (
+              <>
+                <p style={{ fontSize: "13px", color: colores.textoSecundario, marginBottom: "12px" }}>
+                  Sube fotos, un PDF, o un archivo Excel (.xlsx) con la lista de precios de este proveedor.
+                </p>
+                <input
+                  type="file"
+                  accept="image/*,application/pdf,.xlsx"
+                  multiple
+                  onChange={manejarSeleccionArchivosCarga}
+                  style={{ marginBottom: "12px", fontSize: "13px", color: colores.texto }}
+                />
+                {archivosCarga.length > 0 && (
+                  <div style={{ display: "grid", gap: "6px", marginBottom: "12px" }}>
+                    {archivosCarga.map((a, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "13px", padding: "6px 8px", background: "#0B1420", borderRadius: "6px" }}>
+                        <span>{a.nombre}</span>
+                        <button
+                          onClick={() => quitarArchivoCarga(i)}
+                          style={{ background: "none", border: "none", color: colores.textoSecundario, cursor: "pointer", fontSize: "16px" }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  onClick={interpretarPreciosConIA}
+                  disabled={cargandoCarga || archivosCarga.length === 0}
+                  style={{
+                    width: "100%", background: colores.dorado, border: "none", borderRadius: "8px",
+                    padding: "12px", color: "#0B1420", fontWeight: 700, cursor: "pointer", fontSize: "14px",
+                    opacity: cargandoCarga || archivosCarga.length === 0 ? 0.5 : 1,
+                  }}
+                >
+                  {cargandoCarga ? "Interpretando..." : "Interpretar archivos"}
+                </button>
+              </>
+            )}
+
+            {pasoCarga === "revisar" && (
+              <>
+                <p style={{ fontSize: "13px", color: colores.textoSecundario, marginBottom: "12px" }}>
+                  Revisa cada producto detectado. Los marcados en rojo necesitan tu confirmación.
+                </p>
+                <div style={{ display: "grid", gap: "10px", marginBottom: "16px" }}>
+                  {itemsCarga.map((it, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        border: `1px solid ${it.needsReview || !it.productoId ? colores.alerta : colores.borde}`,
+                        borderRadius: "8px", padding: "10px",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                        <span style={{ fontWeight: 700, fontSize: "13px" }}>{it.rawName}</span>
+                        <button
+                          onClick={() => quitarItemCarga(i)}
+                          style={{ background: "none", border: "none", color: colores.textoSecundario, cursor: "pointer", fontSize: "14px" }}
+                        >
+                          Quitar
+                        </button>
+                      </div>
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                        <select
+                          value={it.productoId || ""}
+                          onChange={(e) => asignarProductoCarga(i, e.target.value)}
+                          style={{ flex: "1 1 160px", padding: "8px", borderRadius: "6px", border: `1px solid ${colores.borde}`, background: "#0B1420", color: colores.texto, fontSize: "13px" }}
+                        >
+                          <option value="">Elegir producto...</option>
+                          {productos.map((prod) => (
+                            <option key={prod.id} value={prod.id}>
+                              {prod.nombre}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          value={it.precio}
+                          onChange={(e) => actualizarPrecioCarga(i, e.target.value)}
+                          style={{ width: "100px", padding: "8px", borderRadius: "6px", border: `1px solid ${colores.borde}`, background: "#0B1420", color: colores.texto, fontSize: "13px" }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button
+                    onClick={() => setPasoCarga("subir")}
+                    style={{ flex: 1, background: "none", border: `1px solid ${colores.borde}`, borderRadius: "8px", padding: "12px", color: colores.textoSecundario, cursor: "pointer", fontSize: "14px" }}
+                  >
+                    Atrás
+                  </button>
+                  <button
+                    onClick={guardarPreciosCargados}
+                    disabled={cargandoCarga}
+                    style={{
+                      flex: 2, background: colores.acento, border: "none", borderRadius: "8px",
+                      padding: "12px", color: "#0B1420", fontWeight: 700, cursor: "pointer", fontSize: "14px",
+                      opacity: cargandoCarga ? 0.5 : 1,
+                    }}
+                  >
+                    {cargandoCarga ? "Guardando..." : `Guardar ${itemsCarga.filter((it) => it.productoId && it.precio > 0).length} precios`}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 }
+
