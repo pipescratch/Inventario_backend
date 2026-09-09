@@ -108,6 +108,7 @@ export default function Configuracion() {
             data.productos.map((p) => ({
               idLocal: idLocal(),
               id: p.id,
+              existente: true,
               nombre: p.nombre || "",
               categoria: p.categoria || "",
               unidad: p.unidad || "unidad",
@@ -238,8 +239,26 @@ export default function Configuracion() {
     setMostrarPegar(false);
   }
 
-  function quitarFila(idLocalFila) {
+  async function quitarFila(idLocalFila) {
+    const fila = filas.find((f) => f.idLocal === idLocalFila);
+    if (fila && fila.existente) {
+      const confirmar = window.confirm(`¿Eliminar "${fila.nombre}" del catálogo? Esto no se puede deshacer.`);
+      if (!confirmar) return;
+    }
     setFilas((prev) => prev.filter((f) => f.idLocal !== idLocalFila));
+    if (fila && fila.existente && fila.id) {
+      try {
+        const res = await fetch(`/api/productos?id=${encodeURIComponent(fila.id)}`, {
+          method: "DELETE",
+        });
+        const data = await res.json();
+        if (data.status !== "ok") {
+          setError("No se pudo eliminar el producto de la base de datos: " + (data.message || "error desconocido"));
+        }
+      } catch (err) {
+        setError("Error de red al eliminar el producto.");
+      }
+    }
   }
 
   async function guardarTodo() {
@@ -283,6 +302,7 @@ export default function Configuracion() {
         data.productos.map((p) => ({
           idLocal: idLocal(),
           id: p.id,
+          existente: true,
           nombre: p.nombre || "",
           categoria: p.categoria || "",
           unidad: p.unidad || "unidad",
