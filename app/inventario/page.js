@@ -245,11 +245,21 @@ export default function Inventario() {
     const nuevoTragos = Math.max(0, Math.min(TRAGOS_POR_BOTELLA, botella.tragos + delta));
     const actualizada = { ...botella, tragos: nuevoTragos };
     setBotellas((prev) => prev.map((b) => (b.id === botella.id ? actualizada : b)));
-    await fetch("/api/tabla/botellas_trabajo", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filas: [actualizada] }),
-    });
+    try {
+      const res = await fetch("/api/tabla/botellas_trabajo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filas: [actualizada] }),
+      });
+      const data = await res.json();
+      if (data.status !== "ok") {
+        setError("No se pudo guardar el cambio: " + (data.message || "error desconocido"));
+        cargar();
+      }
+    } catch (err) {
+      setError("Error de red al guardar el cambio.");
+      cargar();
+    }
   }
 
   async function terminarBotella(botella) {
@@ -261,11 +271,21 @@ export default function Inventario() {
       hora_terminacion: nowTime(),
     };
     setBotellas((prev) => prev.map((b) => (b.id === botella.id ? actualizada : b)));
-    await fetch("/api/tabla/botellas_trabajo", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filas: [actualizada] }),
-    });
+    try {
+      const res = await fetch("/api/tabla/botellas_trabajo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filas: [actualizada] }),
+      });
+      const data = await res.json();
+      if (data.status !== "ok") {
+        setError("No se pudo terminar la botella: " + (data.message || "error desconocido"));
+        cargar();
+      }
+    } catch (err) {
+      setError("Error de red al terminar la botella.");
+      cargar();
+    }
   }
 
   const colores = {
