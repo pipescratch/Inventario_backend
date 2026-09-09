@@ -373,11 +373,15 @@ export default function Pedido() {
         ubicacion,
         items: comparacion,
       };
-      await fetch("/api/tabla/historial_inventarios", {
+      const resHistorial = await fetch("/api/tabla/historial_inventarios", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filas: [registroHistorial] }),
       });
+      const dataHistorial = await resHistorial.json();
+      if (dataHistorial.status !== "ok") {
+        setError("El conteo se guardó, pero no se pudo registrar en el historial: " + (dataHistorial.message || "error desconocido"));
+      }
       setHistorialId(registroHistorial.id);
 
       await armarPedidoPorProveedor();
@@ -732,7 +736,7 @@ export default function Pedido() {
         ? dataPedidos.filas.find((p) => p.id === pedidoId)?.numero
         : (dataPedidos.status === "ok" ? dataPedidos.filas.length : 0) + 1;
 
-      await fetch("/api/tabla/pedidos", {
+      const resConfirmar = await fetch("/api/tabla/pedidos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -751,6 +755,12 @@ export default function Pedido() {
           ],
         }),
       });
+      const dataConfirmar = await resConfirmar.json();
+      if (dataConfirmar.status !== "ok") {
+        setError("No se pudo confirmar el pedido: " + (dataConfirmar.message || "error desconocido"));
+        setConfirmando(false);
+        return;
+      }
 
       // Actualiza el stock: suma lo comprado a lo que había, dejando el
       // inventario completo hasta el siguiente reporte.
@@ -777,11 +787,17 @@ export default function Pedido() {
         .filter(Boolean);
 
       if (productosActualizados.length > 0) {
-        await fetch("/api/productos", {
+        const resStock = await fetch("/api/productos", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ productos: productosActualizados }),
         });
+        const dataStock = await resStock.json();
+        if (dataStock.status !== "ok") {
+          setError("El pedido quedó confirmado, pero no se pudo actualizar el stock: " + (dataStock.message || "error desconocido"));
+          setConfirmando(false);
+          return;
+        }
       }
 
       setPedidoConfirmado(true);
