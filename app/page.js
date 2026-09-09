@@ -114,23 +114,6 @@ export default function Home() {
       <div style={{ maxWidth: "720px", margin: "0 auto", padding: "40px 20px 56px" }}>
         {/* Encabezado */}
         <header style={{ marginBottom: "28px", textAlign: "center" }}>
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "#F2EFE9",
-              borderRadius: "18px",
-              padding: "16px 28px",
-              marginBottom: "16px",
-            }}
-          >
-            <img
-              src="/logo_azt.png"
-              alt="La Azotea Ocean Bar"
-              style={{ height: "56px", width: "auto", display: "block" }}
-            />
-          </div>
           <h1
             style={{
               fontFamily: display.style.fontFamily,
