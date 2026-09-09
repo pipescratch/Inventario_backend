@@ -25,6 +25,44 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function comprimirImagen(file, maxWidth = 1600, calidad = 0.7) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const escala = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width * escala;
+        canvas.height = img.height * escala;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+            else reject(new Error("No se pudo comprimir la imagen"));
+          },
+          "image/jpeg",
+          calidad
+        );
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function normalizarTexto(texto) {
+  return (texto || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export default function Proveedores() {
   const [proveedores, setProveedores] = useState([]);
   const [productos, setProductos] = useState([]);
@@ -40,6 +78,12 @@ export default function Proveedores() {
   const [precioEditado, setPrecioEditado] = useState("");
   const [editandoMasivoId, setEditandoMasivoId] = useState(null);
   const [preciosMasivos, setPreciosMasivos] = useState({});
+  const [cargaPreciosProveedor, setCargaPreciosProveedor] = useState(null);
+  const [archivosCarga, setArchivosCarga] = useState([]);
+  const [pasoCarga, setPasoCarga] = useState("subir");
+  const [cargandoCarga, setCargandoCarga] = useState(false);
+  const [errorCarga, setErrorCarga] = useState(null);
+  const [itemsCarga, setItemsCarga] = useState([]);
 
   useEffect(() => {
     cargar();
@@ -185,6 +229,155 @@ export default function Proveedores() {
     }
   }
 
+  function abrirCargaPrecios(proveedor) {
+    setCargaPreciosProveedor({ id: proveedor.id, nombre: proveedor.nombre });
+    setArchivosCarga([]);
+    setPasoCarga("subir");
+    setErrorCarga(null);
+    setItemsCarga([]);
+  }
+
+  function cerrarCargaPrecios() {
+    setCargaPreciosProveedor(null);
+    setArchivosCarga([]);
+    setPasoCarga("subir");
+    setErrorCarga(null);
+    setItemsCarga([]);
+  }
+
+  async function manejarSeleccionArchivosCarga(e) {
+    const archivos = Array.from(e.target.files || []);
+    if (archivos.length === 0) return;
+    setErrorCarga(null);
+    const nuevos = [];
+    for (const file of archivos) {
+      const esImagen = file.type.startsWith("image/");
+      if (esImagen) {
+        try {
+          const blob = await comprimirImagen(file);
+          nuevos.push({ file: blob, nombre: file.name });
+        } catch {
+          setErrorCarga("No se pudo procesar una de las imágenes.");
+        }
+      } else {
+        nuevos.push({ file, nombre: file.name });
+      }
+    }
+    setArchivosCarga((prev) => [...prev, ...nuevos]);
+  }
+
+  function quitarArchivoCarga(index) {
+    setArchivosCarga((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function interpretarPreciosConIA() {
+    if (archivosCarga.length === 0) {
+      setErrorCarga("Sube al menos un archivo (foto, PDF, o Excel).");
+      return;
+    }
+    setCargandoCarga(true);
+    setErrorCarga(null);
+    try {
+      const formData = new FormData();
+      archivosCarga.forEach((a) => formData.append("files", a.file, a.nombre));
+      formData.append("proveedorId", cargaPreciosProveedor.id);
+
+      const res = await fetch("/api/precios/interpret", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (data.status === "rate_limited") {
+        setErrorCarga("El servicio de IA está ocupado. Tus archivos siguen cargados, intenta de nuevo en unos segundos.");
+        return;
+      }
+      if (data.status !== "ok") {
+        setErrorCarga(data.message || "No se pudo interpretar la lista de precios.");
+        return;
+      }
+
+      const itemsConMatch = data.items.map((it) => {
+        const nombreNormalizado = normalizarTexto(it.rawName);
+        const match = productos.find((p) => normalizarTexto(p.nombre) === nombreNormalizado);
+        return {
+          ...it,
+          productoId: match ? match.id : null,
+          nombreProducto: match ? match.nombre : null,
+        };
+      });
+
+      setItemsCarga(itemsConMatch);
+      setPasoCarga("revisar");
+    } catch (err) {
+      setErrorCarga("No se pudo conectar con el servidor. " + err.message);
+    } finally {
+      setCargandoCarga(false);
+    }
+  }
+
+  function asignarProductoCarga(index, productoId) {
+    const producto = productos.find((p) => p.id === productoId);
+    setItemsCarga((prev) =>
+      prev.map((it, i) =>
+        i === index
+          ? { ...it, productoId: producto ? producto.id : null, nombreProducto: producto ? producto.nombre : null }
+          : it
+      )
+    );
+  }
+
+  function actualizarPrecioCarga(index, valor) {
+    setItemsCarga((prev) => prev.map((it, i) => (i === index ? { ...it, precio: Number(valor) } : it)));
+  }
+
+  function quitarItemCarga(index) {
+    setItemsCarga((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function guardarPreciosCargados() {
+    const validos = itemsCarga.filter((it) => it.productoId && it.precio > 0);
+    if (validos.length === 0) {
+      setErrorCarga("No hay productos válidos para guardar (falta emparejar producto o precio).");
+      return;
+    }
+    setCargandoCarga(true);
+    setErrorCarga(null);
+    try {
+      const filas = validos.map((it) => {
+        const existente = precios.find(
+          (p) => p.proveedor_id === cargaPreciosProveedor.id && p.producto_id === it.productoId
+        );
+        return {
+          id: existente ? existente.id : generarUUID(),
+          proveedor_id: cargaPreciosProveedor.id,
+          proveedor_nombre: cargaPreciosProveedor.nombre,
+          producto_id: it.productoId,
+          precio: Number(it.precio),
+          fecha: today(),
+        };
+      });
+
+      const res = await fetch("/api/tabla/precios_proveedor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filas }),
+      });
+      const data = await res.json();
+      if (data.status !== "ok") {
+        setErrorCarga("No se pudieron guardar los precios: " + (data.message || "error desconocido"));
+        return;
+      }
+
+      cerrarCargaPrecios();
+      cargar();
+    } catch (err) {
+      setErrorCarga("Error de red al guardar los precios.");
+    } finally {
+      setCargandoCarga(false);
+    }
+  }
+
   async function guardarProveedor() {
     if (!editando.nombre.trim()) {
       setError("El nombre es obligatorio.");
@@ -220,6 +413,7 @@ export default function Proveedores() {
     textoSecundario: "#9FB0BA",
     acento: "#2DD4BF",
     dorado: "#E3B04B",
+    alerta: "#E35B4B",
   };
 
   const inputStyle = {
@@ -428,12 +622,20 @@ export default function Proveedores() {
                                 </button>
                               </>
                             ) : (
-                              <button
-                                onClick={() => empezarEdicionMasiva(p.id, preciosP)}
-                                style={{ background: "none", border: `1px solid ${colores.acento}`, borderRadius: "6px", padding: "6px 12px", color: colores.acento, cursor: "pointer", fontSize: "12px" }}
-                              >
-                                Editar todos
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => abrirCargaPrecios(p)}
+                                  style={{ background: colores.dorado, border: "none", borderRadius: "6px", padding: "6px 12px", color: "#0B1420", fontWeight: 700, cursor: "pointer", fontSize: "12px" }}
+                                >
+                                  Cargar lista
+                                </button>
+                                <button
+                                  onClick={() => empezarEdicionMasiva(p.id, preciosP)}
+                                  style={{ background: "none", border: `1px solid ${colores.acento}`, borderRadius: "6px", padding: "6px 12px", color: colores.acento, cursor: "pointer", fontSize: "12px" }}
+                                >
+                                  Editar todos
+                                </button>
+                              </>
                             )}
                           </div>
                           <div style={{ display: "grid", gap: "6px", marginBottom: "12px" }}>
@@ -532,6 +734,7 @@ export default function Proveedores() {
                 </div>
               );
             })}
+          </div>
         )}
       </div>
 
@@ -680,4 +883,3 @@ export default function Proveedores() {
     </main>
   );
 }
-
